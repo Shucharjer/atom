@@ -1,0 +1,12 @@
+{
+    "name": "electron",
+    "dependencies": [
+        "glm",
+        "imgui",
+        "vulkan",
+        {
+            "name": "sdl3",
+            "features": ["vulkan"]
+        }
+    ]
+}

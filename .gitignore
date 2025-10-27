@@ -1,0 +1,12 @@
+build
+.cache
+.vs
+.idea
+.vscode
+compile_commands.json
+*.draft.hpp
+*.draft.cpp
+src/type_hash.cpp
+CMakeUserPresets.json
+.clangd
+imgui.ini
