@@ -8,8 +8,8 @@ namespace proton {
 
 class commands {
 public:
-    template <_std_simple_allocator Alloc>
-    explicit commands(basic_world<Alloc>& world) {}
+    template <_world World>
+    explicit commands(World& world) {}
 
     std::pair<uint64_t, bool> spwan();
 

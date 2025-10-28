@@ -23,8 +23,13 @@ struct world_require<world_descriptor<Lists...>&&> : std::true_type {};
 
 template <typename Ty>
 struct application_require {
-    constexpr static bool value =
-        requires(Ty& application) { application.template run<world_descriptor<>{}>(); };
+    constexpr static bool value = requires {
+        typename Ty::config_type; // tuple
+    } && (requires (Ty& obj) {
+        obj.template run<world_desc>();
+    } || requires (Ty& obj) {
+        obj.template run<world_desc>(std::declval<typename Ty::config_type>());
+    });
 };
 
 template <typename Tuple, auto... Worlds>
@@ -46,7 +51,6 @@ public:
     }
 };
 
-
 template <typename... Args, auto... Worlds>
 class run_worlds_fn<std::tuple<Args...>, Worlds...>
     : public neutron::adaptor_closure<run_worlds_fn<std::tuple<Args...>, Worlds...>> {
@@ -63,8 +67,8 @@ public:
         : tup_(std::forward<ArgTys>(args)...) {}
 
     template <typename Application>
-    constexpr void operator()(Application&& application) {
-        std::forward<Application>(application).template run<Worlds...>(std::move(tup_));
+    constexpr auto operator()(Application&& application) {
+        return std::forward<Application>(application).template run<Worlds...>(std::move(tup_));
     }
 };
 

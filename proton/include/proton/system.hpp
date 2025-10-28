@@ -221,6 +221,8 @@ struct parse_system_list<system_list<Systems...>> {
     using _update_systems      = neutron::type_list_filt_t<in_update_stage, systems>;
     using _post_update_systems = neutron::type_list_filt_t<in_post_update_stage, systems>;
 
+    using _render_systems = neutron::type_list_filt_t<in_render_stage, systems>;
+
     using _last_systems = neutron::type_list_filt_t<in_last_stage, systems>;
 
     using _shutdown_systems = neutron::type_list_filt_t<in_shutdown_stage, systems>;
@@ -236,6 +238,7 @@ struct parse_system_list<system_list<Systems...>> {
     using update_systems       = internal::extract_systems_t<_update_systems>;
     using post_update_systems  = internal::extract_systems_t<_post_update_systems>;
     using last_systems         = internal::extract_systems_t<_last_systems>;
+    using render_systems       = internal::extract_systems_t<_render_systems>;
     using shutdown_systems     = internal::extract_systems_t<_shutdown_systems>;
 
     // parsed, each one is a run_list
@@ -256,6 +259,9 @@ struct parse_system_list<system_list<Systems...>> {
         typename internal::parse_same_stage_system_list<_update_systems>::type;
     using parsed_post_update_systems =
         typename internal::parse_same_stage_system_list<_post_update_systems>::type;
+
+    using parsed_render_systems =
+        typename internal::parse_same_stage_system_list<_render_systems>::type;
 
     using parsed_last_systems =
         typename internal::parse_same_stage_system_list<_last_systems>::type;

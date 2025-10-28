@@ -58,6 +58,8 @@ struct in_update_stage : in_stage<stage::update, Desc> {};
 template <typename Desc>
 struct in_post_update_stage : in_stage<stage::post_update, Desc> {};
 template <typename Desc>
+struct in_render_stage : in_stage<stage::render, Desc> {};
+template <typename Desc>
 struct in_last_stage : in_stage<stage::last, Desc> {};
 template <typename Desc>
 struct in_shutdown_stage : in_stage<stage::shutdown, Desc> {};

@@ -6,9 +6,10 @@
 #include <proton/args/common/query.hpp>
 #include <proton/args/system/local.hpp>
 #include <proton/args/system/res.hpp>
+#include <proton/observer.hpp>
+#include <proton/registry.hpp>
 #include <proton/system.hpp>
 #include <proton/world.hpp>
-#include "proton/observer.hpp"
 
 using namespace proton;
 
@@ -30,10 +31,13 @@ struct game_state {
 
     _state value;
 };
+struct player {
+    using component_tag = void;
+};
 
 void create_entities(commands commands);
 void echo_entities(query<const name&, health>);
-void modify_game_state(res<game_state>, query<health&>);
+void modify_game_state(res<game_state>, query<health, player>);
 void observer();
 
 using enum stage;
@@ -46,18 +50,21 @@ constexpr auto world = world_desc
     | add_observer<update, observer>;
 // clang-format on
 
-using t              = decltype(::world);
-using systems        = extract_systems_t<::world>;
-using parsed_systems = parse_system_list<systems>;
-using updates        = parsed_systems::_update_systems;
-using observers      = extract_observers_t<::world>;
+using reg    = registry<::world>;
+using comps  = reg::components;
+using psdsys = reg::systems;
+using slist  = _registry<::world>::system_list;
+using res_t  = reg::resources;
+using locals = reg::locals;
+using obses  = reg::observers;
 
 int main(int argc, char* argv[]) {
     myapp::create() | run_worlds<::world>();
+    auto world = make_worlds<::world>();
     return 0;
 }
 
 void create_entities(commands commands) {}
 void echo_entities(query<const name&, health> qry) {}
-void modify_game_state(res<game_state> res, query<health&> qry) {}
+void modify_game_state(res<game_state> res, query<health, player> qry) {}
 void observer() {}

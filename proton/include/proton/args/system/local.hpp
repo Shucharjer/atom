@@ -4,9 +4,11 @@
 namespace proton {
 
 template <typename... Args>
-class local {
-public:
-private:
+struct local {
+    std::tuple<Args&...> value;
 };
+
+template <auto System, typename... Args>
+struct _local_desc {};
 
 } // namespace proton

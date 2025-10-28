@@ -21,8 +21,8 @@ template <typename Require, component... Components>
 requires(!component<Require>)
 class query<Require, Components...> {
 public:
-    template <_std_simple_allocator Alloc>
-    explicit query(basic_world<Alloc>& world) {}
+    template <_world World>
+    explicit query(World& world) {}
 
     template <component Component>
     auto get() {}
@@ -31,8 +31,8 @@ public:
 template <component... Components>
 class query<Components...> {
 public:
-    template <_std_simple_allocator Alloc>
-    explicit query(basic_world<Alloc>& world) {}
+    template <_world World>
+    explicit query(World& world) {}
 
     template <component Component>
     auto get() {}
