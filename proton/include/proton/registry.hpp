@@ -12,32 +12,6 @@
 
 namespace proton {
 
-template <typename>
-struct _system_traits;
-template <typename Ret, typename... Args>
-struct _system_traits<Ret (*)(Args...)> {
-    using arg_list                   = neutron::type_list<Args...>;
-    constexpr static bool is_nothrow = false;
-};
-template <typename Ret, typename... Args>
-struct _system_traits<Ret (*)(Args...) noexcept> {
-    using arg_list                   = neutron::type_list<Args...>;
-    constexpr static bool is_nothrow = true;
-};
-
-template <template <auto> typename, typename>
-struct type_list_from_value;
-template <template <auto> typename Predicate, template <auto...> typename Template, auto... Vals>
-struct type_list_from_value<Predicate, Template<Vals...>> {
-    using type = neutron::type_list<typename Predicate<Vals>::type...>;
-};
-template <template <auto> typename Predicate, typename ValList>
-using type_list_from_value_t = typename type_list_from_value<Predicate, ValList>::type;
-
-template <stage Stage, typename...>
-struct staged_type_list {};
-template <stage Stage, auto...>
-struct staged_value_list {};
 template <auto Sys, typename>
 struct _sys_t {};
 
@@ -49,16 +23,16 @@ struct _registry {
     using systems = parse_system_list<extract_systems_t<Desc>>;
 
     using system_list = neutron::type_list<
-        staged_type_list<stage::pre_startup, typename systems::pre_startup_systems>,
-        staged_type_list<stage::startup, typename systems::startup_systems>,
-        staged_type_list<stage::post_startup, typename systems::post_startup_systems>,
-        staged_type_list<stage::first, typename systems::first_systems>,
-        staged_type_list<stage::pre_update, typename systems::pre_update_systems>,
-        staged_type_list<stage::update, typename systems::update_systems>,
-        staged_type_list<stage::post_update, typename systems::post_update_systems>,
-        staged_type_list<stage::render, typename systems::render_systems>,
-        staged_type_list<stage::last, typename systems::last_systems>,
-        staged_type_list<stage::shutdown, typename systems::shutdown_systems>>;
+        staged_type_list_from_value_t<stage::pre_startup, typename systems::parsed_pre_startup_systems>,
+        staged_type_list_from_value_t<stage::startup, typename systems::parsed_startup_systems>,
+        staged_type_list_from_value_t<stage::post_startup, typename systems::parsed_post_startup_systems>,
+        staged_type_list_from_value_t<stage::first, typename systems::parsed_first_systems>,
+        staged_type_list_from_value_t<stage::pre_update, typename systems::parsed_pre_update_systems>,
+        staged_type_list_from_value_t<stage::update, typename systems::parsed_update_systems>,
+        staged_type_list_from_value_t<stage::post_update, typename systems::parsed_post_update_systems>,
+        staged_type_list_from_value_t<stage::render, typename systems::parsed_render_systems>,
+        staged_type_list_from_value_t<stage::last, typename systems::parsed_last_systems>,
+        staged_type_list_from_value_t<stage::shutdown, typename systems::parsed_shutdown_systems>>;
 
     template <template <typename...> typename Template, auto Sys>
     struct _get_arg {
@@ -69,32 +43,39 @@ struct _registry {
 
     // query<component...>
     template <auto Sys>
-    using _get_qry = _get_arg<query, Sys>;
-    using components =
+    using _get_qry   = _get_arg<query, Sys>;
+    using components = neutron::type_list_expose_t<
+        bundle,
         neutron::unique_type_list_t<neutron::type_list_first_t<neutron::type_list_not_empty_t<
-            neutron::type_list<query<>>, neutron::type_list_list_cat_t<type_list_from_value_t<
-                                             _get_qry, typename systems::all_systems>>>>>;
+            neutron::type_list<query<>>,
+            neutron::type_list_list_cat_t<
+                neutron::type_list_from_value_t<_get_qry, typename systems::all_systems>>>>>>;
 
     // <on<?, ...>, ...>
     using observers = extract_observers_t<Desc>;
 
-    // <<startup, <sys, ...>, <sys, ...>>, <update, ...>, ...>
+    // <<sys, ...>, <sys, ...>>, <sys, ...>, ...>
     template <auto Sys>
     struct _get_loc {
-        using type = _sys_t<
-            Sys, neutron::type_list_filt_nvoid_t<
-                     local, typename _system_traits<decltype(Sys)>::arg_list>>;
+        using type = neutron::type_list_with_value_t<
+            _sys_tuple, Sys,
+            neutron::type_list_filt_nvoid_t<
+                local, typename _system_traits<decltype(Sys)>::arg_list>>;
     };
-    using locals = type_list_from_value_t<_get_loc, typename systems::all_systems>;
-    // using locals = neutron::type_list_list_cat_t<type_list_from_value_t<_get_loc, typename
-    // systems::all_systems>>;
+    template <typename>
+    struct filt_fn;
+    template <template <auto, typename...> typename Template, auto Sys, typename... Args>
+    struct filt_fn<Template<Sys, Args...>> {
+        constexpr static bool value = sizeof...(Args) != 0;
+    };
+    using locals = neutron::type_list_filt_t<filt_fn, neutron::type_list_from_value_t<_get_loc, typename systems::all_systems>>;
 
     // <<startup, <sys, ...>, <sys, ...>>, <update, ...>, ...>
     template <auto Sys>
     using _get_res = _get_arg<res, Sys>;
     using resources =
         neutron::unique_type_list_t<neutron::type_list_first_t<neutron::type_list_list_cat_t<
-            type_list_from_value_t<_get_res, typename systems::all_systems>>>>;
+            neutron::type_list_from_value_t<_get_res, typename systems::all_systems>>>>;
 };
 
 template <auto Desc>

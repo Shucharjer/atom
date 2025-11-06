@@ -1,4 +1,5 @@
 #include "example_application.hpp"
+#include <cstdint>
 #include <string>
 #include <neutron/type_list.hpp>
 #include <neutron/value_list.hpp>
@@ -10,6 +11,7 @@
 #include <proton/registry.hpp>
 #include <proton/system.hpp>
 #include <proton/world.hpp>
+#include "proton/proton.hpp"
 
 using namespace proton;
 
@@ -31,12 +33,35 @@ struct game_state {
 
     _state value;
 };
+struct position {
+    using component_tag = void;
+    int x;
+    int y;
+};
+struct direction {
+    using component_tag = void;
+    enum : uint8_t {
+        left,
+        up,
+        right,
+        down
+    } value;
+};
+using transform = bundle<position, direction>;
+struct mesh {
+    using component_tag = void;
+    uint32_t handle;
+};
 struct player {
     using component_tag = void;
 };
 
+struct mesh_manager {};
+
 void create_entities(commands commands);
 void echo_entities(query<const name&, health>);
+void movement(query<transform>);
+void render_objs(query<transform, mesh>, local<mesh_manager>);
 void modify_game_state(res<game_state>, query<health, player>);
 void observer();
 
@@ -46,6 +71,8 @@ using enum stage;
 constexpr auto world = world_desc
     | add_system<startup, create_entities>
     | add_system<update, echo_entities>
+    | add_system<update, movement, after<echo_entities>>
+    | add_system<render, render_objs>
     | add_system<post_update, modify_game_state, after<echo_entities>>
     | add_observer<update, observer>;
 // clang-format on

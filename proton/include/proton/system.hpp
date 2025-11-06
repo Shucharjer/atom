@@ -270,4 +270,33 @@ struct parse_system_list<system_list<Systems...>> {
         typename internal::parse_same_stage_system_list<_shutdown_systems>::type;
 };
 
+template <auto Sys, typename... Args>
+class _sys_tuple : public std::tuple<Args...> {
+public:
+    using tuple_type = std::tuple<Args...>;
+
+    using std::tuple<Args...>::tuple;
+
+    constexpr _sys_tuple(const std::tuple<Args...>& tup) noexcept(
+        std::is_nothrow_copy_constructible_v<tuple_type>)
+        : tuple_type(tup) {}
+
+    constexpr _sys_tuple(std::tuple<Args...>&& tup) noexcept(
+        std::is_nothrow_move_constructible_v<tuple_type>)
+        : tuple_type(std::move(tup)) {}
+};
+
+template <typename>
+struct _system_traits;
+template <typename Ret, typename... Args>
+struct _system_traits<Ret (*)(Args...)> {
+    using arg_list                   = neutron::type_list<Args...>;
+    constexpr static bool is_nothrow = false;
+};
+template <typename Ret, typename... Args>
+struct _system_traits<Ret (*)(Args...) noexcept> {
+    using arg_list                   = neutron::type_list<Args...>;
+    constexpr static bool is_nothrow = true;
+};
+
 } // namespace proton

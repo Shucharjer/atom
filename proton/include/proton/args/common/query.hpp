@@ -1,5 +1,6 @@
 #pragma once
 #include <neutron/type_list.hpp>
+#include "proton/args/match.hpp"
 #include "proton/proton.hpp"
 #include "proton/world.hpp"
 
@@ -17,9 +18,9 @@ public:
 private:
 };
 
-template <typename Require, component... Components>
-requires(!component<Require>)
-class query<Require, Components...> {
+template <typename Require, _comp_or_bundle... CompnentsOrBundles>
+requires(!component<Require> && !_bundle<Require>)
+class query<Require, CompnentsOrBundles...> {
 public:
     template <_world World>
     explicit query(World& world) {}
@@ -28,8 +29,8 @@ public:
     auto get() {}
 };
 
-template <component... Components>
-class query<Components...> {
+template <_comp_or_bundle... ComponentsOrBundles>
+class query<ComponentsOrBundles...> {
 public:
     template <_world World>
     explicit query(World& world) {}

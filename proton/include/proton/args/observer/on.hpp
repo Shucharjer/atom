@@ -3,10 +3,14 @@
 
 namespace proton {
 
-template <typename... Args>
+template <typename Event>
 class on {
-    template <_std_simple_allocator Alloc>
-    explicit on(basic_world<Alloc>& alloc) {}
+public:
+    template <_world World>
+    explicit on(World& world) {}
+
+    decltype(auto) event() noexcept { return; }
+    decltype(auto) event() const noexcept { return; }
 };
 
 } // namespace proton
