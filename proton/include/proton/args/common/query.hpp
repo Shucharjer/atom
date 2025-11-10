@@ -1,6 +1,7 @@
 #pragma once
-#include <neutron/type_list.hpp>
+#include <neutron/template_list.hpp>
 #include "proton/args/match.hpp"
+#include "proton/args/qualifier.hpp"
 #include "proton/proton.hpp"
 #include "proton/world.hpp"
 
@@ -18,30 +19,20 @@ public:
 private:
 };
 
-template <typename Require, _comp_or_bundle... CompnentsOrBundles>
-requires(!component<Require> && !_bundle<Require>)
-class query<Require, CompnentsOrBundles...> {
+template <typename... Args>
+requires(_with_obj_assert<Args...>())
+class query<Args...> {
 public:
     template <_world World>
     explicit query(World& world) {}
 
-    template <component Component>
-    auto get() {}
+    auto get();
+
+    auto get_with_entity();
 };
 
-template <_comp_or_bundle... ComponentsOrBundles>
-class query<ComponentsOrBundles...> {
-public:
-    template <_world World>
-    explicit query(World& world) {}
-
-    template <component Component>
-    auto get() {}
-};
-
-template <component... Components>
-requires(std::is_same_v<Components, std::remove_cvref_t<Components>> && ...)
-struct without {};
+template <_comp_or_bundle... Comps>
+struct changed {};
 
 namespace internal {
 template <typename Ty>

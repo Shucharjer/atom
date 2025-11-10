@@ -11,10 +11,10 @@ public:
     template <_world World>
     explicit commands(World& world) {}
 
-    std::pair<uint64_t, bool> spwan();
+    std::pair<uint64_t, bool> spawn();
 
     template <component... Components>
-    std::pair<uint64_t, bool> spwan();
+    std::pair<uint64_t, bool> spawn();
 
     void kill(uint64_t entity);
 };

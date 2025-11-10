@@ -1,7 +1,7 @@
 #pragma once
 #include <type_traits>
 #include <neutron/memory.hpp>
-#include "neutron/type_list.hpp"
+#include <neutron/template_list.hpp>
 
 namespace proton {
 
@@ -45,6 +45,21 @@ concept _res_or_bundle =
     resource<Ty> || (_bundle<Ty> && neutron::type_list_requires_recurse<_is_resource, Ty>::value);
 
 using neutron::_std_simple_allocator;
+
+template <
+    typename Components, typename Systems, typename Observers, typename Locals, typename Res,
+    _std_simple_allocator Alloc = std::allocator<std::byte>>
+class basic_world;
+
+template <typename>
+struct _is_basic_world : std::false_type {};
+template <typename... Args>
+struct _is_basic_world<basic_world<Args...>> : std::true_type {};
+template <typename Ty>
+constexpr auto _is_basic_world_v = _is_basic_world<Ty>::value;
+
+template <typename Ty>
+concept _world = _is_basic_world_v<Ty>;
 
 } // namespace proton
 

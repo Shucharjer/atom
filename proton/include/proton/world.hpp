@@ -16,10 +16,9 @@
 
 namespace proton {
 
-template <
-    typename Components, typename Systems, typename Observers, typename Locals, typename Res,
-    _std_simple_allocator Alloc = std::allocator<std::byte>>
-class basic_world;
+using entity_t     = uint64_t;
+using generation_t = uint32_t;
+using index_t      = uint32_t;
 
 // clang-format off
 template <
@@ -78,7 +77,9 @@ class basic_world<
         struct _is_specific_stage : std::false_type {};
         template <typename... Systems>
         struct _is_specific_stage<staged_type_list<Stage, Systems...>> : std::true_type {};
-        using type = neutron::type_list_filt_t<_is_specific_stage, system_list>;
+        using type = neutron::type_list_not_empty_t<
+            staged_type_list<Stage>,
+            neutron::type_list_first_t<neutron::type_list_filt_t<_is_specific_stage, system_list>>>;
     };
 
     template <auto Sys>
@@ -89,10 +90,12 @@ class basic_world<
         struct call;
         template <template <typename...> typename Template, typename... Args>
         struct call<Template<Args...>> {
-            void operator()(basic_world& world) noexcept(system_traits::is_nothrow) {
-                Sys(Args{ world }...);
+            void operator()(basic_world* world) noexcept(system_traits::is_nothrow) {
+                Sys(Args{ *world }...);
             }
         };
+
+        void operator()(basic_world* world) { call<arg_list>{}(world); }
     };
 
     template <typename>
@@ -120,7 +123,7 @@ class basic_world<
 public:
     using components = CompList<Comps...>;
 
-    basic_world(const Alloc& alloc = Alloc{}) : archetypes_(alloc), entities_(alloc) {}
+    basic_world(const Alloc& alloc = Alloc{}) : archetypes_(alloc), entities_(alloc), locals_() {}
 
     template <stage Stage, typename Executor = single_task_executor>
     void call(const Executor& executor = Executor{}) {
@@ -136,23 +139,17 @@ public:
 
 private:
     std::vector<archetype, allocator_t<archetype>> archetypes_;
-    neutron::shift_map<uint64_t, uint32_t, Alloc> entities_;
-    basic_command_buffer<Alloc> command_buffers_;
+    // mapping entity to the archetype stores it
+    neutron::shift_map<entity_t, id_t, Alloc> entities_;
+    // command buffer
+    basic_command_buffer<Alloc> command_buffer_;
+    // variables could be use in only one specific system
     std::tuple<Locals...> locals_;
+    // variables could be pass between each systems
     std::tuple<Reses...> resources_;
 
     // constexpr static auto components_hash = neutron::make_hash_array<components>();
 };
-
-template <typename>
-struct _is_basic_world : std::false_type {};
-template <typename... Args>
-struct _is_basic_world<basic_world<Args...>> : std::true_type {};
-template <typename Ty>
-constexpr auto _is_basic_world_v = _is_basic_world<Ty>::value;
-
-template <typename Ty>
-concept _world = _is_basic_world_v<Ty>;
 
 template <stage Stage, _world World, typename Executor = single_task_executor>
 void call(World& world, const Executor& executor = Executor{}) {
@@ -207,15 +204,17 @@ void call_update(std::tuple<Worlds...>& worlds, Executor& executor) {
 }
 
 struct world_accessor {
-    template <typename World>
-    requires _is_basic_world<World>::value
+    template <_world World>
     static auto& archetypes(World& world) noexcept {
         return world.archetypes_;
     }
-    template <typename World>
-    requires _is_basic_world<World>::value
+    template <_world World>
     static auto& entities(World& world) noexcept {
         return world.entities_;
+    }
+    template <_world World>
+    static auto& resources(World& world) noexcept {
+        return world.resources_;
     }
 };
 

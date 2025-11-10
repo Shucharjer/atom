@@ -1,6 +1,6 @@
 #pragma once
 #include <neutron/pipeline.hpp>
-#include <neutron/type_list.hpp>
+#include <neutron/template_list.hpp>
 #include "proton/stage.hpp"
 #include "proton/world_desc.hpp"
 

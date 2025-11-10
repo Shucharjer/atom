@@ -1,8 +1,7 @@
 #pragma once
 #include <type_traits>
 #include <neutron/pipeline.hpp>
-#include <neutron/type_list.hpp>
-#include <neutron/value_list.hpp>
+#include <neutron/template_list.hpp>
 #include "proton/desc_list.hpp"
 #include "proton/stage.hpp"
 
@@ -201,7 +200,11 @@ struct parse_same_stage_system_list<system_list<Systems...>> {
 } // namespace internal
 
 template <auto WorldDesc>
-using extract_systems_t = neutron::type_list_filt_nvoid_t<system_list, desc_t<WorldDesc>>;
+struct extract_systems {
+    using type = neutron::type_list_filt_type_list_t<system_list, desc_t<WorldDesc>>;
+};
+template <auto WorldDesc>
+using extract_systems_t = typename extract_systems<WorldDesc>::type;
 
 template <typename>
 struct parse_system_list;
@@ -276,6 +279,8 @@ public:
     using tuple_type = std::tuple<Args...>;
 
     using std::tuple<Args...>::tuple;
+
+    constexpr _sys_tuple() = default;
 
     constexpr _sys_tuple(const std::tuple<Args...>& tup) noexcept(
         std::is_nothrow_copy_constructible_v<tuple_type>)
