@@ -1,4 +1,5 @@
 #pragma once
+#include <tuple>
 #include <type_traits>
 #include <neutron/pipeline.hpp>
 #include <neutron/template_list.hpp>
@@ -291,6 +292,11 @@ public:
         : tuple_type(std::move(tup)) {}
 };
 
+template <auto Sys, typename>
+struct _is_relevant_sys_tuple : std::false_type {};
+template <auto Sys, typename... Args>
+struct _is_relevant_sys_tuple<Sys, _sys_tuple<Sys, Args...>> : std::true_type {};
+
 template <typename>
 struct _system_traits;
 template <typename Ret, typename... Args>
@@ -305,3 +311,12 @@ struct _system_traits<Ret (*)(Args...) noexcept> {
 };
 
 } // namespace proton
+
+template <auto Sys, typename... Args>
+struct std::tuple_size<proton::_sys_tuple<Sys, Args...>>
+    : integral_constant<size_t, sizeof...(Args)> {};
+
+template <size_t Index, auto Sys, typename... Args>
+struct std::tuple_element<Index, proton::_sys_tuple<Sys, Args...>> {
+    using type = typename tuple_element<Index, tuple_element<Index, tuple<Args...>>>::type;
+};

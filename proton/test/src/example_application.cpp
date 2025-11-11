@@ -82,7 +82,7 @@ void echo_entities(query<with<const name&, health>>);
 void movement(res<const input<keyboard>&, const timer&>, single<with<transform&, player>>);
 void update_position(query<with<position&, direction>>);
 void render_objs(
-    query<with<const transform&, sprite>, without<>>, /*local<spirit_manager>,*/ res<const timer&>);
+    query<with<const transform&, sprite>, without<>>, local<sprite_manager>, res<const timer&>);
 void modify_game_state(res<game_state>, query<with<health, player>, changed<health>>);
 
 using enum stage;
@@ -136,6 +136,7 @@ void update_position(query<with<position&, direction>> qry) {
     // }
 }
 void render_objs(
-    query<with<const transform&, sprite>, without<>> qry, /*local<sprite_manager> local,*/
-    res<struct timer> res) {}
+    query<with<const transform&, sprite>> qry, local<sprite_manager> local, res<const timer&> res) {
+    auto& [sprite_manager] = local;
+}
 void modify_game_state(res<game_state>, query<with<health, player>, changed<health>>) {}

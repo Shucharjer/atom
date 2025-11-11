@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <type_traits>
 #include <unordered_map>
 #include "neutron/reflection.hpp"
@@ -25,6 +26,8 @@ consteval metatype make_type() noexcept {
 class archetype {
 public:
 private:
+    uint64_t hash_;
+    
 };
 
 } // namespace proton

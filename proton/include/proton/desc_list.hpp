@@ -44,24 +44,24 @@ template <
 struct in_stage<Stage, Fn<Stage, System, Requires...>> : std::true_type {};
 
 template <typename Desc>
-struct in_pre_startup_stage : in_stage<stage::pre_startup, Desc> {};
+using in_pre_startup_stage = in_stage<stage::pre_startup, Desc>;
 template <typename Desc>
-struct in_startup_stage : in_stage<stage::startup, Desc> {};
+using in_startup_stage = in_stage<stage::startup, Desc>;
 template <typename Desc>
-struct in_post_startup_stage : in_stage<stage::post_startup, Desc> {};
+using in_post_startup_stage = in_stage<stage::post_startup, Desc>;
 template <typename Desc>
-struct in_first_stage : in_stage<stage::first, Desc> {};
+using in_first_stage = in_stage<stage::first, Desc>;
 template <typename Desc>
-struct in_pre_update_stage : in_stage<stage::pre_update, Desc> {};
+using in_pre_update_stage = in_stage<stage::pre_update, Desc>;
 template <typename Desc>
-struct in_update_stage : in_stage<stage::update, Desc> {};
+using in_update_stage = in_stage<stage::update, Desc>;
 template <typename Desc>
-struct in_post_update_stage : in_stage<stage::post_update, Desc> {};
+using in_post_update_stage = in_stage<stage::post_update, Desc>;
 template <typename Desc>
-struct in_render_stage : in_stage<stage::render, Desc> {};
+using in_render_stage = in_stage<stage::render, Desc>;
 template <typename Desc>
-struct in_last_stage : in_stage<stage::last, Desc> {};
+using in_last_stage = in_stage<stage::last, Desc>;
 template <typename Desc>
-struct in_shutdown_stage : in_stage<stage::shutdown, Desc> {};
+using in_shutdown_stage = in_stage<stage::shutdown, Desc>;
 
 } // namespace proton

@@ -6,6 +6,7 @@
 #include <vector>
 #include <neutron/shift_map.hpp>
 #include <neutron/type_hash.hpp>
+#include "args/call_from_world.hpp"
 #include "args/common/command_buffer.hpp"
 #include "proton.hpp"
 #include "proton/archetype.hpp"
@@ -23,51 +24,24 @@ using index_t      = uint32_t;
 // clang-format off
 template <
     template <typename...> typename CompList, _comp_or_bundle... Comps,
-    typename... PreStartupSystems,
-    typename... StartupSystems,
-    typename... PostStartupSystems,
-    typename... FirstSystems,
-    typename... PreUpdateSystems,
-    typename... UpdateSystems,
-    typename... PostUpdateSystems,
-    typename... RenderSystems,
-    typename... LastSystems,
-    typename... ShutdownSystems,
+    typename SystemLists,
     typename Observers,
     typename... Locals,
     template <typename...> typename ResList, _res_or_bundle... Reses,
     _std_simple_allocator Alloc>
 // clang-format on
 class basic_world<
-    CompList<Comps...>,
-    neutron::type_list<
-        // staged_type_list<stage, Sys...>
-        staged_type_list<stage::pre_startup, PreStartupSystems...>,
-        staged_type_list<stage::startup, StartupSystems...>,
-        staged_type_list<stage::post_startup, PostStartupSystems...>,
-        staged_type_list<stage::first, FirstSystems...>,
-        staged_type_list<stage::pre_update, PreUpdateSystems...>,
-        staged_type_list<stage::update, UpdateSystems...>,
-        staged_type_list<stage::post_update, PostUpdateSystems...>,
-        staged_type_list<stage::render, RenderSystems...>,
-        staged_type_list<stage::last, LastSystems...>,
-        staged_type_list<stage::shutdown, ShutdownSystems...>>,
-    Observers, neutron::type_list<Locals...>, ResList<Reses...>, Alloc> {
+    CompList<Comps...>, SystemLists, Observers, neutron::type_list<Locals...>, ResList<Reses...>,
+    Alloc> {
     friend struct world_accessor;
 
-    using system_list = neutron::type_list<
-        // staged_type_list<stage, Sys...>
-        staged_type_list<stage::pre_startup, PreStartupSystems...>,
-        staged_type_list<stage::startup, StartupSystems...>,
-        staged_type_list<stage::post_startup, PostStartupSystems...>,
-        staged_type_list<stage::first, FirstSystems...>,
-        staged_type_list<stage::pre_update, PreUpdateSystems...>,
-        staged_type_list<stage::update, UpdateSystems...>,
-        staged_type_list<stage::post_update, PostUpdateSystems...>,
-        staged_type_list<stage::render, RenderSystems...>,
-        staged_type_list<stage::last, LastSystems...>,
-        staged_type_list<stage::shutdown, ShutdownSystems...>>;
+public:
+    using components   = CompList<Comps...>;
+    using system_lists = SystemLists;
+    using components   = CompList<Comps...>;
+    using locals       = std::tuple<Locals...>;
 
+private:
     template <typename Ty>
     using allocator_t = typename std::allocator_traits<Alloc>::template rebind_alloc<Ty>;
 
@@ -78,8 +52,8 @@ class basic_world<
         template <typename... Systems>
         struct _is_specific_stage<staged_type_list<Stage, Systems...>> : std::true_type {};
         using type = neutron::type_list_not_empty_t<
-            staged_type_list<Stage>,
-            neutron::type_list_first_t<neutron::type_list_filt_t<_is_specific_stage, system_list>>>;
+            staged_type_list<Stage>, neutron::type_list_first_t<neutron::type_list_filt_t<
+                                         _is_specific_stage, system_lists>>>;
     };
 
     template <auto Sys>
@@ -91,7 +65,7 @@ class basic_world<
         template <template <typename...> typename Template, typename... Args>
         struct call<Template<Args...>> {
             void operator()(basic_world* world) noexcept(system_traits::is_nothrow) {
-                Sys(Args{ *world }...);
+                Sys(call_from_world<Sys, Args>{}(*world)...);
             }
         };
 
@@ -121,8 +95,6 @@ class basic_world<
     };
 
 public:
-    using components = CompList<Comps...>;
-
     basic_world(const Alloc& alloc = Alloc{}) : archetypes_(alloc), entities_(alloc), locals_() {}
 
     template <stage Stage, typename Executor = single_task_executor>
@@ -149,6 +121,25 @@ private:
     std::tuple<Reses...> resources_;
 
     // constexpr static auto components_hash = neutron::make_hash_array<components>();
+};
+
+struct world_accessor {
+    template <_world World>
+    static auto& archetypes(World& world) noexcept {
+        return world.archetypes_;
+    }
+    template <_world World>
+    static auto& entities(World& world) noexcept {
+        return world.entities_;
+    }
+    template <_world World>
+    static auto& locals(World& world) noexcept {
+        return world.locals_;
+    }
+    template <_world World>
+    static auto& resources(World& world) noexcept {
+        return world.resources_;
+    }
 };
 
 template <stage Stage, _world World, typename Executor = single_task_executor>
@@ -202,20 +193,5 @@ void call_update(std::tuple<Worlds...>& worlds, Executor& executor) {
     call<stage::update>(worlds, executor);
     call<stage::post_update>(worlds, executor);
 }
-
-struct world_accessor {
-    template <_world World>
-    static auto& archetypes(World& world) noexcept {
-        return world.archetypes_;
-    }
-    template <_world World>
-    static auto& entities(World& world) noexcept {
-        return world.entities_;
-    }
-    template <_world World>
-    static auto& resources(World& world) noexcept {
-        return world.resources_;
-    }
-};
 
 } // namespace proton

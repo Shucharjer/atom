@@ -9,15 +9,11 @@ namespace proton {
 
 template <typename... Resources>
 requires(_res_or_bundle<std::remove_cvref_t<Resources>> && ...)
-struct res : public std::tuple<Resources&...> {
-    static_assert((std::is_same_v<std::remove_const_t<Resources>, Resources> && ...));
-
-    using tuple_type = std::tuple<Resources&...>;
-
+struct alignas(64) res : public std::tuple<Resources...> {
     template <_world World>
     res(World& world)
-        : std::tuple<Resources&...>(
-              neutron::get_first<std::remove_cvref_t<Resources>>(world_accessor::resources(world))...) {}
+        : std::tuple<Resources...>(neutron::get_first<std::remove_cvref_t<Resources>>(
+              world_accessor::resources(world))...) {}
 };
 
 } // namespace proton
