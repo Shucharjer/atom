@@ -35,26 +35,50 @@ template <typename>
 struct query_filter;
 template <typename... Args>
 struct query_filter<with<Args...>> {
-    static void init(auto& result, const auto& archetypes, const auto& components) noexcept {}
-    static void filt(auto& result, const auto& archetypes, const auto& components) {}
+    static void init(auto& result, const auto& archetypes) noexcept {}
+    static void filt(auto& result, const auto& archetypes) {}
+};
+
+template <typename>
+struct query_filter;
+template <typename... Args>
+struct query_filter<without<Args...>> {
+    static void init(auto& result, const auto& archetypes) noexcept {}
+    static void filt(auto& result, const auto& archetypes) {}
+};
+
+template <typename>
+struct query_filter;
+template <typename... Args>
+struct query_filter<withany<Args...>> {
+    static void init(auto& result, const auto& archetypes) noexcept {}
+    static void filt(auto& result, const auto& archetypes) {}
+};
+
+template <typename>
+struct query_filter;
+template <typename... Args>
+struct query_filter<changed<Args...>> {
+    static void init(auto& result, const auto& archetypes) noexcept {}
+    static void filt(auto& result, const auto& archetypes) {}
 };
 
 template <typename Ty>
-concept _query_filter = requires(
-    std::vector<id_t>& result, const std::vector<archetype>& archetypes,
-    std::unordered_map<uint64_t, std::vector<id_t>> components) {
-    Ty::init(result, archetypes);
-    Ty::filt(result, archetypes, components);
-};
+concept _query_filter =
+    requires(std::vector<id_t>& result, 
+        // prefer const auto&
+        const std::vector<archetype<>>& archetypes) {
+        Ty::init(result, archetypes);
+        Ty::filt(result, archetypes);
+    };
 
-template <_query_filter... Filters>
-requires(_with_obj_assert<Filters...>())
+template <typename... Filters>
+requires(_with_obj_assert<Filters...>() && (_query_filter<query_filter<Filters>> && ...))
 class query<Filters...> {
 public:
     template <_world World>
     explicit query(World& world) {
         auto& archetypes = world_accessor::archetypes(world);
-        auto& components = world_accessor::components(world);
         archetypes_.resize(archetypes.size());
         std::iota(archetypes_.begin(), archetypes_.end(), 0);
         (query_filter<Filters>::init(archetypes_, archetypes), ...);

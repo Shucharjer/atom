@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
+#include <neutron/template_list.hpp>
 #include "proton/proton.hpp"
 #include "proton/world.hpp"
 
@@ -9,7 +10,7 @@ namespace proton {
 
 template <typename... Resources>
 requires(_res_or_bundle<std::remove_cvref_t<Resources>> && ...)
-struct alignas(64) res : public std::tuple<Resources...> {
+struct res : public std::tuple<Resources...> {
     template <_world World>
     res(World& world)
         : std::tuple<Resources...>(neutron::get_first<std::remove_cvref_t<Resources>>(

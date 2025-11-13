@@ -62,23 +62,16 @@ constexpr auto _is_basic_world_v = _is_basic_world<Ty>::value;
 template <typename Ty>
 concept _world = _is_basic_world_v<Ty>;
 
+using entity_t     = uint64_t;
+using generation_t = uint32_t;
+using index_t      = uint32_t;
+
+class future_entity_t {
+public:
+    constexpr explicit future_entity_t(index_t inframe_index) : identity_(inframe_index) {}
+
+private:
+    index_t identity_;
+};
+
 } // namespace proton
-
-/*
-
-sys:
-Local, Query, If, Deferred,
-
-
-
-
-
-
-
-
-
-
-
-
-
-*/

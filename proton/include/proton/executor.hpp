@@ -1,14 +1,23 @@
 #pragma once
 #include <atomic>
+#include <cstddef>
 #include <latch>
+#include <mutex>
 #include <ranges>
 #include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include "neutron/template_list.hpp"
+#include <neutron/template_list.hpp>
+#include "proton/command_buffer.hpp"
 
 namespace proton {
+
+template <typename Alloc>
+struct execute_context {
+    using command_buffer_t = command_buffer<Alloc>;
+    command_buffer_t command_buffer;
+};
 
 class single_task_executor {
     template <typename, typename... Args>
@@ -65,8 +74,8 @@ public:
     }
 
     template <typename FnTuple, typename... Args>
-    constexpr auto submit(FnTuple&& fn, Args&&... args) const noexcept(
-        std::is_nothrow_constructible_v<future<FnTuple, Args...>, Args...>) {
+    constexpr auto submit(FnTuple&& fn, Args&&... args) const
+        noexcept(std::is_nothrow_constructible_v<future<FnTuple, Args...>, Args...>) {
         return future(std::forward<FnTuple>(fn), std::forward<Args>(args)...);
     }
 
@@ -76,8 +85,29 @@ public:
     }
 };
 
+template <typename Alloc = std::allocator<std::byte>>
 class basic_executor {
+    template <typename Ty>
+    using _rebind_alloc_t = neutron::rebind_alloc_t<Alloc, Ty>;
+
+    std::vector<std::jthread, _rebind_alloc_t<std::jthread>> threads_;
+    std::vector<execute_context<Alloc>, _rebind_alloc_t<execute_context<Alloc>>> contexts_;
+    std::vector<std::mutex, _rebind_alloc_t<std::mutex>> mutex_;
+    std::atomic<bool> running_;
+
+    void _execute(id_t logical_id) {
+        while (running_.load()) {
+
+            {
+                auto ulock = std::unique_lock{ mutex_[] };
+            }
+        }
+    }
+
 public:
+    template <typename Al = Alloc>
+    basic_executor(const Al& alloc = Alloc{}) : threads_(alloc) {}
+
     template <auto... Fn, typename... Args>
     auto submit(Args&&... args);
 

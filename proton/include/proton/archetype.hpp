@@ -1,13 +1,15 @@
 #pragma once
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 #include "neutron/memory.hpp"
 #include "neutron/neutron.hpp"
-#include "neutron/reflection.hpp"
 #include "neutron/type_hash.hpp"
 #include "proton/proton.hpp"
 
@@ -34,18 +36,28 @@ consteval auto make_types() noexcept {
 }
 
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
-class basic_archetype {
+class archetype {
     template <typename Ty>
     using _rebind_alloc_t = rebind_alloc_t<Alloc, Ty>;
 
 public:
+    using allocator_type   = Alloc;
+    using allocator_traits = std::allocator_traits<Alloc>;
+    using size_type        = size_t;
+    using difference_type  = ptrdiff_t;
+
     template <_comp_or_bundle... Components, typename Al = Alloc>
-    constexpr basic_archetype(neutron::type_spreader<Components>..., const Al& alloc);
+    constexpr archetype(neutron::type_spreader<Components>..., const Al& alloc);
 
     class chunk {
     public:
     private:
     };
+
+
+    NODISCARD constexpr bool empty() const noexcept { return size_ != 0UL; }
+
+    NODISCARD constexpr size_type size() const noexcept { return size_; }
 
     auto begin();
 
@@ -65,17 +77,15 @@ private:
     std::vector<uint64_t, _rebind_alloc_t<uint64_t>> hash_list_;
     std::vector<metatype, _rebind_alloc_t<metatype>> metatypes_;
 
+    size_t size_{};
     std::vector<chunk, _rebind_alloc_t<chunk>> chunks_;
 };
-
-using archetype = basic_archetype<>;
 
 #if HAS_CXX23
 
 template <_std_simple_allocator Alloc>
 template <_comp_or_bundle... Components, typename Al>
-constexpr basic_archetype<Alloc>::basic_archetype(
-    neutron::type_spreader<Components>..., const Al& alloc)
+constexpr archetype<Alloc>::archetype(neutron::type_spreader<Components>..., const Al& alloc)
     : hash_list_(
           std::from_range, neutron::make_hash_array<neutron::type_list<Components...>>(), alloc),
       metatypes_(
@@ -89,8 +99,7 @@ constexpr basic_archetype<Alloc>::basic_archetype(
 
 template <_std_simple_allocator Alloc>
 template <_comp_or_bundle... Components, typename Al>
-constexpr basic_archetype<Alloc>::basic_archetype(
-    neutron::type_spreader<Components>..., const Al& alloc)
+constexpr archetype<Alloc>::archetype(neutron::type_spreader<Components>..., const Al& alloc)
     : hash_list_(
           neutron::make_hash_array<neutron::type_list<Components...>>().begin(),
           neutron::make_hash_array<neutron::type_list<Components...>>().end(), alloc),
