@@ -15,6 +15,7 @@
 #include <proton/stage.hpp>
 #include <proton/system.hpp>
 #include <proton/world.hpp>
+#include "neutron/type_hash.hpp"
 
 using namespace proton;
 

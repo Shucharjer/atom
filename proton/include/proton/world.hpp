@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -38,7 +39,6 @@ class basic_world<
 public:
     using components   = CompList<Comps...>;
     using system_lists = SystemLists;
-    using components   = CompList<Comps...>;
     using locals       = std::tuple<Locals...>;
 
 private:
@@ -111,6 +111,8 @@ public:
 
 private:
     std::vector<archetype, allocator_t<archetype>> archetypes_;
+    // mapping component hash to archetypes store this kind of component
+    std::unordered_map<uint64_t, std::vector<id_t>> components_;
     // mapping entity to the archetype stores it
     neutron::shift_map<entity_t, id_t, Alloc> entities_;
     // command buffer
@@ -127,6 +129,10 @@ struct world_accessor {
     template <_world World>
     static auto& archetypes(World& world) noexcept {
         return world.archetypes_;
+    }
+    template <_world World>
+    static auto& components(World& world) noexcept {
+        return world.components_;
     }
     template <_world World>
     static auto& entities(World& world) noexcept {

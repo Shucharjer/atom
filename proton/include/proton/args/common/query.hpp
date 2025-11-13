@@ -1,6 +1,10 @@
 #pragma once
+#include <cstdint>
+#include <numeric>
+#include <unordered_map>
+#include <vector>
 #include <neutron/template_list.hpp>
-#include "proton/args/match.hpp"
+#include "proton/archetype.hpp"
 #include "proton/args/qualifier.hpp"
 #include "proton/proton.hpp"
 #include "proton/world.hpp"
@@ -8,31 +12,61 @@
 namespace proton {
 
 template <typename...>
-class query;
+class query {
+    // only for type deducing
+    consteval query() noexcept = default;
+};
 
 class _query_iterator {
 public:
     _query_iterator();
     _query_iterator& operator++();
     _query_iterator operator++(int);
+    auto operator*();
+    auto operator->();
 
 private:
 };
 
+template <_comp_or_bundle... Comps>
+struct changed {};
+
+template <typename>
+struct query_filter;
 template <typename... Args>
-requires(_with_obj_assert<Args...>())
-class query<Args...> {
+struct query_filter<with<Args...>> {
+    static void init(auto& result, const auto& archetypes, const auto& components) noexcept {}
+    static void filt(auto& result, const auto& archetypes, const auto& components) {}
+};
+
+template <typename Ty>
+concept _query_filter = requires(
+    std::vector<id_t>& result, const std::vector<archetype>& archetypes,
+    std::unordered_map<uint64_t, std::vector<id_t>> components) {
+    Ty::init(result, archetypes);
+    Ty::filt(result, archetypes, components);
+};
+
+template <_query_filter... Filters>
+requires(_with_obj_assert<Filters...>())
+class query<Filters...> {
 public:
     template <_world World>
-    explicit query(World& world) {}
+    explicit query(World& world) {
+        auto& archetypes = world_accessor::archetypes(world);
+        auto& components = world_accessor::components(world);
+        archetypes_.resize(archetypes.size());
+        std::iota(archetypes_.begin(), archetypes_.end(), 0);
+        (query_filter<Filters>::init(archetypes_, archetypes), ...);
+    }
 
     auto get();
 
     auto get_with_entity();
-};
 
-template <_comp_or_bundle... Comps>
-struct changed {};
+private:
+    std::vector<id_t> archetypes_;
+};
 
 namespace internal {
 template <typename Ty>

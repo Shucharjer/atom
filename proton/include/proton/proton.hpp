@@ -45,6 +45,7 @@ concept _res_or_bundle =
     resource<Ty> || (_bundle<Ty> && neutron::type_list_requires_recurse<_is_resource, Ty>::value);
 
 using neutron::_std_simple_allocator;
+using neutron::rebind_alloc_t;
 
 template <
     typename Components, typename Systems, typename Observers, typename Locals, typename Res,

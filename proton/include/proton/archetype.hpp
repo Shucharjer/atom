@@ -1,33 +1,109 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
+#include <vector>
+#include "neutron/memory.hpp"
+#include "neutron/neutron.hpp"
 #include "neutron/reflection.hpp"
+#include "neutron/type_hash.hpp"
+#include "proton/proton.hpp"
 
 namespace proton {
 
 struct metatype {
-    size_t hash;
     size_t size;
     size_t align;
     void (*construct)(void*);
     void (*destroy)(void*);
+
+    template <typename Ty>
+    consteval static metatype make() noexcept {
+        return metatype{ .size      = std::is_empty_v<Ty> ? 0 : sizeof(Ty),
+                         .align     = std::is_empty_v<Ty> ? 0 : alignof(Ty),
+                         .construct = [](void* ptr) { ::new (ptr) Ty{}; },
+                         .destroy = [](void* ptr) { static_cast<Ty*>(ptr)->~Ty(); } };
+    }
 };
 
-template <typename Ty>
-consteval metatype make_type() noexcept {
-    return metatype{ .hash      = neutron::hash_of<Ty>(),
-                     .size      = std::is_empty_v<Ty> ? 0 : sizeof(Ty),
-                     .align     = std::is_empty_v<Ty> ? 0 : alignof(Ty),
-                     .construct = [](void* ptr) { ::new (ptr) Ty{}; },
-                     .destroy = [](void* ptr) { static_cast<Ty*>(ptr)->~Ty(); } };
+template <typename... Tys>
+consteval auto make_types() noexcept {
+    return std::array{ metatype::make<Tys>()... };
 }
 
-class archetype {
+template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+class basic_archetype {
+    template <typename Ty>
+    using _rebind_alloc_t = rebind_alloc_t<Alloc, Ty>;
+
 public:
+    template <_comp_or_bundle... Components, typename Al = Alloc>
+    constexpr basic_archetype(neutron::type_spreader<Components>..., const Al& alloc);
+
+    class chunk {
+    public:
+    private:
+    };
+
+    auto begin();
+
+    auto end();
+
+    template <typename... Args>
+    NODISCARD bool has() const noexcept {
+        if constexpr (sizeof...(Args) == 1U) {
+            constexpr auto hash = neutron::hash_of<Args...>();
+            return std::binary_search(hash_list_.begin(), hash_list_.end(), hash);
+        } else {
+            return (has<Args>() && ...);
+        }
+    }
+
 private:
-    uint64_t hash_;
-    
+    std::vector<uint64_t, _rebind_alloc_t<uint64_t>> hash_list_;
+    std::vector<metatype, _rebind_alloc_t<metatype>> metatypes_;
+
+    std::vector<chunk, _rebind_alloc_t<chunk>> chunks_;
 };
+
+using archetype = basic_archetype<>;
+
+#if HAS_CXX23
+
+template <_std_simple_allocator Alloc>
+template <_comp_or_bundle... Components, typename Al>
+constexpr basic_archetype<Alloc>::basic_archetype(
+    neutron::type_spreader<Components>..., const Al& alloc)
+    : hash_list_(
+          std::from_range, neutron::make_hash_array<neutron::type_list<Components...>>(), alloc),
+      metatypes_(
+          std::from_range,
+          make_types<
+              neutron::sorted_type_t<neutron::sorted_list_t<neutron::type_list<Components...>>>>(),
+          alloc),
+      chunks_(alloc) {}
+
+#else
+
+template <_std_simple_allocator Alloc>
+template <_comp_or_bundle... Components, typename Al>
+constexpr basic_archetype<Alloc>::basic_archetype(
+    neutron::type_spreader<Components>..., const Al& alloc)
+    : hash_list_(
+          neutron::make_hash_array<neutron::type_list<Components...>>().begin(),
+          neutron::make_hash_array<neutron::type_list<Components...>>().end(), alloc),
+      metatypes_(
+          make_types<
+              neutron::sorted_type_t<neutron::sorted_list_t<neutron::type_list<Components...>>>>()
+              .begin(),
+          make_types<
+              neutron::sorted_type_t<neutron::sorted_list_t<neutron::type_list<Components...>>>>()
+              .end(),
+          alloc),
+      chunks_(alloc) {}
+
+#endif
 
 } // namespace proton
