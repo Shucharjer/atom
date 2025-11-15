@@ -7,6 +7,8 @@ file(GLOB_RECURSE SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 add_library(proton STATIC ${SRC_FILES})
 target_include_directories(proton PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(proton PUBLIC neutron)
+find_package(stdexec CONFIG REQUIRED)
+target_link_libraries(proton PUBLIC STDEXEC::stdexec)
 
 option(PROTON_BUILD_TEST OFF)
 

@@ -3,7 +3,7 @@ IndentWidth: 4
 # 不使用Tab
 UseTab: false
 # 一行的长度限制
-ColumnLimit: 100
+ColumnLimit: 80
 # 赋值语句对齐
 AlignConsecutiveAssignments: true
 # 短函数可以单行存在
@@ -93,6 +93,8 @@ BraceWrapping:
     SplitEmptyNamespace: true
 
 BreakAfterAttributes: Never
+BreakBeforeTernaryOperators: true
+BreakInheritanceList: AfterColon
 
 # 命名空间后缩进
 NamespaceIndentation: None

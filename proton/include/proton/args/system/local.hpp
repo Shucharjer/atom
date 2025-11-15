@@ -38,8 +38,9 @@ struct call_from_world<Sys, local<Args...>> {
 
     template <_world World>
     local<Args...>& operator()(World& world) {
-        using sys_tuple = neutron::type_list_filt_t<_predicate, typename World::locals>;
-        auto& locals    = world_accessor::locals(world);
+        using sys_tuple =
+            neutron::type_list_filt_t<_predicate, typename World::locals>;
+        auto& locals = world_accessor::locals(world);
         return neutron::get_first<sys_tuple>(locals);
     }
 };
@@ -47,7 +48,8 @@ struct call_from_world<Sys, local<Args...>> {
 } // namespace proton
 
 template <typename... Args>
-struct std::tuple_size<proton::local<Args...>> : std::integral_constant<size_t, sizeof...(Args)> {};
+struct std::tuple_size<proton::local<Args...>> :
+    std::integral_constant<size_t, sizeof...(Args)> {};
 
 template <size_t Index, typename... Args>
 struct std::tuple_element<Index, proton::local<Args...>> {

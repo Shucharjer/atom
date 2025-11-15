@@ -36,8 +36,8 @@ template <typename Tuple, auto... Worlds>
 class run_worlds_fn;
 
 template <auto... Worlds>
-class run_worlds_fn<std::tuple<>, Worlds...>
-    : public neutron::adaptor_closure<run_worlds_fn<std::tuple<>, Worlds...>> {
+class run_worlds_fn<std::tuple<>, Worlds...> :
+    public neutron::adaptor_closure<run_worlds_fn<std::tuple<>, Worlds...>> {
 
 public:
     using input_require = application_require<void>;
@@ -52,8 +52,9 @@ public:
 };
 
 template <typename... Args, auto... Worlds>
-class run_worlds_fn<std::tuple<Args...>, Worlds...>
-    : public neutron::adaptor_closure<run_worlds_fn<std::tuple<Args...>, Worlds...>> {
+class run_worlds_fn<std::tuple<Args...>, Worlds...> :
+    public neutron::adaptor_closure<
+        run_worlds_fn<std::tuple<Args...>, Worlds...>> {
     using tuple_type = std::tuple<Args...>;
     std::tuple<Args...> tup_;
 
@@ -68,16 +69,18 @@ public:
 
     template <typename Application>
     constexpr auto operator()(Application&& application) {
-        return std::forward<Application>(application).template run<Worlds...>(std::move(tup_));
+        return std::forward<Application>(application)
+            .template run<Worlds...>(std::move(tup_));
     }
 };
 
 template <auto... Worlds>
 struct _run_worlds_wrapper {
     template <typename... Args>
-    constexpr auto operator()(Args&&... args) const
-        noexcept(std::is_nothrow_constructible_v<std::tuple<Args...>, Args...>) {
-        return run_worlds_fn<std::tuple<Args...>, Worlds...>(std::forward<Args>(args)...);
+    constexpr auto operator()(Args&&... args) const noexcept(
+        std::is_nothrow_constructible_v<std::tuple<Args...>, Args...>) {
+        return run_worlds_fn<std::tuple<Args...>, Worlds...>(
+            std::forward<Args>(args)...);
     }
 };
 

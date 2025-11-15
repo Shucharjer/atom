@@ -9,7 +9,8 @@ template <typename Ty>
 class cond {
 public:
     template <_world World>
-    explicit cond(World& world) noexcept(std::is_nothrow_invocable_r_v<bool, Ty, World&>)
+    explicit cond(World& world) noexcept(
+        std::is_nothrow_invocable_r_v<bool, Ty, World&>)
     requires requires {
         { Ty{}(world) } -> std::same_as<bool>;
     }

@@ -14,9 +14,10 @@ struct withany {};
 
 template <typename Ty>
 struct _is_with_like {
-    constexpr static auto value = neutron::is_specific_type_list_v<with, Ty> ||
-                                  neutron::is_specific_type_list_v<without, Ty> ||
-                                  neutron::is_specific_type_list_v<withany, Ty>;
+    constexpr static auto value =
+        neutron::is_specific_type_list_v<with, Ty> ||
+        neutron::is_specific_type_list_v<without, Ty> ||
+        neutron::is_specific_type_list_v<withany, Ty>;
 };
 
 template <typename Ty>

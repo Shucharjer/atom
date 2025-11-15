@@ -32,18 +32,24 @@ struct _registry {
     using system_list = neutron::type_list<
         staged_type_list_from_value_t<
             stage::pre_startup, typename systems::parsed_pre_startup_systems>,
-        staged_type_list_from_value_t<stage::startup, typename systems::parsed_startup_systems>,
+        staged_type_list_from_value_t<
+            stage::startup, typename systems::parsed_startup_systems>,
         staged_type_list_from_value_t<
             stage::post_startup, typename systems::parsed_post_startup_systems>,
-        staged_type_list_from_value_t<stage::first, typename systems::parsed_first_systems>,
+        staged_type_list_from_value_t<
+            stage::first, typename systems::parsed_first_systems>,
         staged_type_list_from_value_t<
             stage::pre_update, typename systems::parsed_pre_update_systems>,
-        staged_type_list_from_value_t<stage::update, typename systems::parsed_update_systems>,
+        staged_type_list_from_value_t<
+            stage::update, typename systems::parsed_update_systems>,
         staged_type_list_from_value_t<
             stage::post_update, typename systems::parsed_post_update_systems>,
-        staged_type_list_from_value_t<stage::render, typename systems::parsed_render_systems>,
-        staged_type_list_from_value_t<stage::last, typename systems::parsed_last_systems>,
-        staged_type_list_from_value_t<stage::shutdown, typename systems::parsed_shutdown_systems>>;
+        staged_type_list_from_value_t<
+            stage::render, typename systems::parsed_render_systems>,
+        staged_type_list_from_value_t<
+            stage::last, typename systems::parsed_last_systems>,
+        staged_type_list_from_value_t<
+            stage::shutdown, typename systems::parsed_shutdown_systems>>;
 
     template <template <typename...> typename Template, auto Sys>
     struct _get_tlist {
@@ -63,8 +69,10 @@ struct _registry {
     // using querys   = neutron::type_list_first_t<
     //       neutron::type_list_value_list_cat_t<neutron::type_list_not_empty_t<
     //           neutron::type_list<query<>>,
-    //           neutron::type_list_from_value_t<_get_qry, typename systems::all_systems>>>>;
-    using querys = neutron::type_list_from_value_t<_get_qry, typename systems::all_systems>;
+    //           neutron::type_list_from_value_t<_get_qry, typename
+    //           systems::all_systems>>>>;
+    using querys = neutron::type_list_from_value_t<
+        _get_qry, typename systems::all_systems>;
 
     using components = std::remove_pointer_t<decltype([] {
         using namespace neutron;
@@ -73,11 +81,14 @@ struct _registry {
         using with_like_only_t  = type_list_filt_t<_is_with_like, combined_t>;
         using exposed_with_t    = type_list_expose_t<with, with_like_only_t>;
         using exposed_without_t = type_list_expose_t<without, exposed_with_t>;
-        using exposed_withany_t = type_list_expose_t<withany, exposed_without_t>;
-        using removed_cvref_t   = type_list_convert_t<std::remove_cvref, exposed_withany_t>;
-        using exposed_bundle_t  = type_list_recurse_expose_t<bundle, removed_cvref_t>;
-        using unique_type_t     = unique_type_list_t<exposed_bundle_t>;
-        using type              = unique_type_t;
+        using exposed_withany_t =
+            type_list_expose_t<withany, exposed_without_t>;
+        using removed_cvref_t =
+            type_list_convert_t<std::remove_cvref, exposed_withany_t>;
+        using exposed_bundle_t =
+            type_list_recurse_expose_t<bundle, removed_cvref_t>;
+        using unique_type_t = unique_type_list_t<exposed_bundle_t>;
+        using type          = unique_type_t;
         return static_cast<type*>(nullptr);
     }())>;
 
@@ -94,21 +105,26 @@ struct _registry {
     };
     template <typename>
     struct filt_fn;
-    template <template <auto, typename...> typename Template, auto Sys, typename... Args>
+    template <
+        template <auto, typename...> typename Template, auto Sys,
+        typename... Args>
     struct filt_fn<Template<Sys, Args...>> {
         constexpr static bool value = sizeof...(Args) != 0;
     };
     using locals = neutron::type_list_filt_t<
-        filt_fn, neutron::type_list_from_value_t<_get_loc, typename systems::all_systems>>;
+        filt_fn, neutron::type_list_from_value_t<
+                     _get_loc, typename systems::all_systems>>;
 
     // <<startup, <sys, ...>, <sys, ...>>, <update, ...>, ...>
     template <auto Sys>
-    using _get_res = _get_tlist<res, Sys>;
-    using resources =
-        neutron::type_list_convert_t<std::remove_cvref, neutron::unique_type_list_t<neutron::type_list_first_t<neutron::type_list_not_empty_t<
-            neutron::type_list<res<>>,
-            neutron::type_list_list_cat_t<
-                neutron::type_list_from_value_t<_get_res, typename systems::all_systems>>>>>>;
+    using _get_res  = _get_tlist<res, Sys>;
+    using resources = neutron::type_list_convert_t<
+        std::remove_cvref,
+        neutron::unique_type_list_t<
+            neutron::type_list_first_t<neutron::type_list_not_empty_t<
+                neutron::type_list<res<>>,
+                neutron::type_list_list_cat_t<neutron::type_list_from_value_t<
+                    _get_res, typename systems::all_systems>>>>>>;
 };
 
 template <auto Desc>
@@ -121,7 +137,8 @@ struct registry {
     using resources   = _registry<Desc>::resources;
 };
 
-template <auto... WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
+template <
+    auto... WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
 auto make_worlds(const Alloc& alloc = Alloc{}) {
     // clang-format off
     return std::tuple<

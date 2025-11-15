@@ -59,11 +59,12 @@ public:
     }
 
     template <
-        typename ArchetypeAlloc, typename ArchetypesAlloc, size_t PageSize, size_t Shift,
-        typename EntitiesAlloc>
+        typename ArchetypeAlloc, typename ArchetypesAlloc, size_t PageSize,
+        size_t Shift, typename EntitiesAlloc>
     constexpr void execute(
         std::vector<archetype<ArchetypeAlloc>, ArchetypesAlloc>& archetypes,
-        neutron::shift_map<entity_t, index_t, PageSize, Shift, EntitiesAlloc>& entities) {
+        neutron::shift_map<entity_t, index_t, PageSize, Shift, EntitiesAlloc>&
+            entities) {
         //
     }
 

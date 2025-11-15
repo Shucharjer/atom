@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -8,8 +9,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "neutron/memory.hpp"
-#include "neutron/neutron.hpp"
+#include "neutron/internal/spreader.hpp"
 #include "neutron/type_hash.hpp"
 #include "proton/proton.hpp"
 
@@ -26,7 +26,8 @@ struct metatype {
         return metatype{ .size      = std::is_empty_v<Ty> ? 0 : sizeof(Ty),
                          .align     = std::is_empty_v<Ty> ? 0 : alignof(Ty),
                          .construct = [](void* ptr) { ::new (ptr) Ty{}; },
-                         .destroy = [](void* ptr) { static_cast<Ty*>(ptr)->~Ty(); } };
+                         .destroy =
+                             [](void* ptr) { static_cast<Ty*>(ptr)->~Ty(); } };
     }
 };
 
@@ -54,7 +55,6 @@ public:
     private:
     };
 
-
     NODISCARD constexpr bool empty() const noexcept { return size_ != 0UL; }
 
     NODISCARD constexpr size_type size() const noexcept { return size_; }
@@ -67,7 +67,8 @@ public:
     NODISCARD bool has() const noexcept {
         if constexpr (sizeof...(Args) == 1U) {
             constexpr auto hash = neutron::hash_of<Args...>();
-            return std::binary_search(hash_list_.begin(), hash_list_.end(), hash);
+            return std::binary_search(
+                hash_list_.begin(), hash_list_.end(), hash);
         } else {
             return (has<Args>() && ...);
         }
@@ -85,13 +86,15 @@ private:
 
 template <_std_simple_allocator Alloc>
 template <_comp_or_bundle... Components, typename Al>
-constexpr archetype<Alloc>::archetype(neutron::type_spreader<Components>..., const Al& alloc)
+constexpr archetype<Alloc>::archetype(
+    neutron::type_spreader<Components>..., const Al& alloc)
     : hash_list_(
-          std::from_range, neutron::make_hash_array<neutron::type_list<Components...>>(), alloc),
+          std::from_range,
+          neutron::make_hash_array<neutron::type_list<Components...>>(), alloc),
       metatypes_(
           std::from_range,
-          make_types<
-              neutron::sorted_type_t<neutron::sorted_list_t<neutron::type_list<Components...>>>>(),
+          make_types<neutron::sorted_type_t<
+              neutron::sorted_list_t<neutron::type_list<Components...>>>>(),
           alloc),
       chunks_(alloc) {}
 
@@ -99,16 +102,18 @@ constexpr archetype<Alloc>::archetype(neutron::type_spreader<Components>..., con
 
 template <_std_simple_allocator Alloc>
 template <_comp_or_bundle... Components, typename Al>
-constexpr archetype<Alloc>::archetype(neutron::type_spreader<Components>..., const Al& alloc)
+constexpr archetype<Alloc>::archetype(
+    neutron::type_spreader<Components>..., const Al& alloc)
     : hash_list_(
           neutron::make_hash_array<neutron::type_list<Components...>>().begin(),
-          neutron::make_hash_array<neutron::type_list<Components...>>().end(), alloc),
+          neutron::make_hash_array<neutron::type_list<Components...>>().end(),
+          alloc),
       metatypes_(
-          make_types<
-              neutron::sorted_type_t<neutron::sorted_list_t<neutron::type_list<Components...>>>>()
+          make_types<neutron::sorted_type_t<
+              neutron::sorted_list_t<neutron::type_list<Components...>>>>()
               .begin(),
-          make_types<
-              neutron::sorted_type_t<neutron::sorted_list_t<neutron::type_list<Components...>>>>()
+          make_types<neutron::sorted_type_t<
+              neutron::sorted_list_t<neutron::type_list<Components...>>>>()
               .end(),
           alloc),
       chunks_(alloc) {}

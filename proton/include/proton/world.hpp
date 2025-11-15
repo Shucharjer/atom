@@ -20,7 +20,8 @@ namespace proton {
 
 template <_std_simple_allocator Alloc>
 class world_base {
-    template <typename, typename, typename, typename, typename, _std_simple_allocator>
+    template <
+        typename, typename, typename, typename, typename, _std_simple_allocator>
     friend class basic_world;
 
     template <typename Ty>
@@ -30,7 +31,8 @@ class world_base {
 
 public:
     template <typename Al = Alloc>
-    constexpr world_base(const Al& alloc = Alloc{}) : archetypes_(alloc), entities_(alloc) {}
+    constexpr world_base(const Al& alloc = Alloc{})
+        : archetypes_(alloc), entities_(alloc) {}
 
     constexpr future_entity_t spawn();
 
@@ -62,7 +64,8 @@ private:
     std::vector<archetype, _rebind_alloc_t<archetype>> archetypes_;
     /// mapping entity to the archetype stores it
     /// shift_map<entity_t, id_t>
-    neutron::shift_map<entity_t, index_t, 32UL, sizeof(entity_t) * 4UL, Alloc> entities_;
+    neutron::shift_map<entity_t, index_t, 32UL, sizeof(entity_t) * 4UL, Alloc>
+        entities_;
 };
 
 // clang-format off
@@ -75,8 +78,8 @@ template <
     _std_simple_allocator Alloc>
 // clang-format on
 class basic_world<
-    CompList<Comps...>, SystemLists, Observers, neutron::type_list<Locals...>, ResList<Reses...>,
-    Alloc> : world_base<Alloc> {
+    CompList<Comps...>, SystemLists, Observers, neutron::type_list<Locals...>,
+    ResList<Reses...>, Alloc> : world_base<Alloc> {
     friend struct world_accessor;
 
     template <typename Ty>
@@ -91,17 +94,20 @@ public:
 
 private:
     template <typename Ty>
-    using allocator_t = typename std::allocator_traits<Alloc>::template rebind_alloc<Ty>;
+    using allocator_t =
+        typename std::allocator_traits<Alloc>::template rebind_alloc<Ty>;
 
     template <stage Stage>
     struct _get_systems {
         template <typename Ty>
         struct _is_specific_stage : std::false_type {};
         template <typename... Systems>
-        struct _is_specific_stage<staged_type_list<Stage, Systems...>> : std::true_type {};
+        struct _is_specific_stage<staged_type_list<Stage, Systems...>> :
+            std::true_type {};
         using type = neutron::type_list_not_empty_t<
-            staged_type_list<Stage>, neutron::type_list_first_t<neutron::type_list_filt_t<
-                                         _is_specific_stage, system_lists>>>;
+            staged_type_list<Stage>,
+            neutron::type_list_first_t<
+                neutron::type_list_filt_t<_is_specific_stage, system_lists>>>;
     };
 
     template <auto Sys>
@@ -112,7 +118,8 @@ private:
         struct call;
         template <template <typename...> typename Template, typename... Args>
         struct call<Template<Args...>> {
-            void operator()(basic_world* world) noexcept(system_traits::is_nothrow) {
+            void operator()(basic_world* world) noexcept(
+                system_traits::is_nothrow) {
                 Sys(call_from_world<Sys, Args>{}(*world)...);
             }
         };
@@ -127,7 +134,9 @@ private:
         template <typename Executor>
         void operator()(Executor& executor, basic_world* self) {
             executor
-                .template submit<[](basic_world* self) { _call_system<Systems>{}(self); }...>(self)
+                .template submit<[](basic_world* self) {
+                    _call_system<Systems>{}(self);
+                }...>(self)
                 .wait();
         }
     };
@@ -143,7 +152,8 @@ private:
     };
 
 public:
-    basic_world(const Alloc& alloc = Alloc{}) : world_base<Alloc>(alloc), locals_(), resources_() {}
+    basic_world(const Alloc& alloc = Alloc{})
+        : world_base<Alloc>(alloc), locals_(), resources_() {}
 
     template <stage Stage, typename Executor = single_task_executor>
     void call(const Executor& executor = Executor{}) {
@@ -159,12 +169,14 @@ public:
 
 private:
     /// variables could be use in only one specific system
-    /// Locals are _sys_tuple, a tuple with system info, used to get the correct local for each sys
+    /// Locals are _sys_tuple, a tuple with system info, used to get the correct
+    /// local for each sys
     std::tuple<Locals...> locals_;
     // variables could be pass between each systems
     neutron::shared_tuple<Reses...> resources_;
 
-    // constexpr static auto components_hash = neutron::make_hash_array<components>();
+    // constexpr static auto components_hash =
+    // neutron::make_hash_array<components>();
 };
 
 struct world_accessor {
@@ -196,8 +208,10 @@ void call(World& world, Executor& executor) {
     world.template call<Stage>(executor);
 }
 
-template <stage Stage, _world... Worlds, typename Executor = single_task_executor>
-void call(std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
+template <
+    stage Stage, _world... Worlds, typename Executor = single_task_executor>
+void call(
+    std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
     [&worlds, &executor]<size_t... Is>(std::index_sequence<Is...>) {
         (std::get<Is>(worlds).template call<Stage>(executor), ...);
     }(std::index_sequence_for<Worlds...>());
@@ -211,7 +225,8 @@ void call(std::tuple<Worlds...>& worlds, Executor& executor) {
 }
 
 template <_world... Worlds, typename Executor = single_task_executor>
-void call_startup(std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
+void call_startup(
+    std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
     call<stage::pre_startup>(worlds, executor);
     call<stage::startup>(worlds, executor);
     call<stage::post_startup>(worlds, executor);
@@ -225,7 +240,8 @@ void call_startup(std::tuple<Worlds...>& worlds, Executor& executor) {
 }
 
 template <_world... Worlds, typename Executor = single_task_executor>
-void call_update(std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
+void call_update(
+    std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
     call<stage::pre_update>(worlds, executor);
     call<stage::update>(worlds, executor);
     call<stage::post_update>(worlds, executor);

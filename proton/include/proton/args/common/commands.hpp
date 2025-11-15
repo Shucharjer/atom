@@ -11,7 +11,8 @@ class commands {
 public:
     template <typename CommandBuffer>
     requires std::convertible_to<CommandBuffer&, class command_buffer_base&>
-    explicit commands(CommandBuffer& command_buffer) noexcept : command_buffer_(&command_buffer) {}
+    explicit commands(CommandBuffer& command_buffer) noexcept
+        : command_buffer_(&command_buffer) {}
 
     std::pair<entity_t, bool> spawn();
 

@@ -23,7 +23,8 @@ class single_task_executor {
     template <typename, typename... Args>
     class future;
 
-    template <template <auto...> typename Template, auto... Fn, typename... Args>
+    template <
+        template <auto...> typename Template, auto... Fn, typename... Args>
     class future<Template<Fn...>, Args...> {
         std::tuple<Args...> args_;
 
@@ -62,20 +63,22 @@ class single_task_executor {
             : range_(std::forward<Rng>(range)), args_(args...) {}
 
         void wait() {
-            std::ranges::for_each(range_, [this](auto fn) { std::apply(fn, args_); });
+            std::ranges::for_each(
+                range_, [this](auto fn) { std::apply(fn, args_); });
         }
     };
 
 public:
     template <auto... Fn, typename... Args>
-    constexpr auto submit(Args&... args) const noexcept(
-        std::is_nothrow_constructible_v<future<neutron::value_list<Fn...>, Args...>, Args...>) {
+    constexpr auto submit(Args&... args) const
+        noexcept(std::is_nothrow_constructible_v<
+                 future<neutron::value_list<Fn...>, Args...>, Args...>) {
         return future<neutron::value_list<Fn...>, Args...>(args...);
     }
 
     template <typename FnTuple, typename... Args>
-    constexpr auto submit(FnTuple&& fn, Args&&... args) const
-        noexcept(std::is_nothrow_constructible_v<future<FnTuple, Args...>, Args...>) {
+    constexpr auto submit(FnTuple&& fn, Args&&... args) const noexcept(
+        std::is_nothrow_constructible_v<future<FnTuple, Args...>, Args...>) {
         return future(std::forward<FnTuple>(fn), std::forward<Args>(args)...);
     }
 
@@ -91,7 +94,8 @@ class basic_executor {
     using _rebind_alloc_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
     std::vector<std::jthread, _rebind_alloc_t<std::jthread>> threads_;
-    std::vector<execute_context<Alloc>, _rebind_alloc_t<execute_context<Alloc>>> contexts_;
+    std::vector<execute_context<Alloc>, _rebind_alloc_t<execute_context<Alloc>>>
+        contexts_;
     std::vector<std::mutex, _rebind_alloc_t<std::mutex>> mutex_;
     std::atomic<bool> running_;
 

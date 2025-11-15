@@ -64,16 +64,18 @@ struct query_filter<changed<Args...>> {
 };
 
 template <typename Ty>
-concept _query_filter =
-    requires(std::vector<id_t>& result, 
-        // prefer const auto&
-        const std::vector<archetype<>>& archetypes) {
-        Ty::init(result, archetypes);
-        Ty::filt(result, archetypes);
-    };
+concept _query_filter = requires(
+    std::vector<id_t>& result,
+    // prefer const auto&
+    const std::vector<archetype<>>& archetypes) {
+    Ty::init(result, archetypes);
+    Ty::filt(result, archetypes);
+};
 
 template <typename... Filters>
-requires(_with_obj_assert<Filters...>() && (_query_filter<query_filter<Filters>> && ...))
+requires(
+    _with_obj_assert<Filters...>() &&
+    (_query_filter<query_filter<Filters>> && ...))
 class query<Filters...> {
 public:
     template <_world World>

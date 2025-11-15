@@ -19,7 +19,8 @@ concept _bundle = _is_bundle<Ty>::value;
 struct component_tag {};
 
 template <typename Ty>
-concept component = requires { typename std::remove_cvref_t<Ty>::component_tag; };
+concept component =
+    requires { typename std::remove_cvref_t<Ty>::component_tag; };
 
 template <typename Ty>
 struct _is_component {
@@ -28,7 +29,9 @@ struct _is_component {
 
 template <typename Ty>
 concept _comp_or_bundle =
-    component<Ty> || (_bundle<Ty> && neutron::type_list_requires_recurse<_is_component, Ty>::value);
+    component<Ty> ||
+    (_bundle<Ty> &&
+     neutron::type_list_requires_recurse<_is_component, Ty>::value);
 
 struct resource_tag {};
 
@@ -42,14 +45,16 @@ struct _is_resource {
 
 template <typename Ty>
 concept _res_or_bundle =
-    resource<Ty> || (_bundle<Ty> && neutron::type_list_requires_recurse<_is_resource, Ty>::value);
+    resource<Ty> ||
+    (_bundle<Ty> &&
+     neutron::type_list_requires_recurse<_is_resource, Ty>::value);
 
 using neutron::_std_simple_allocator;
 using neutron::rebind_alloc_t;
 
 template <
-    typename Components, typename Systems, typename Observers, typename Locals, typename Res,
-    _std_simple_allocator Alloc = std::allocator<std::byte>>
+    typename Components, typename Systems, typename Observers, typename Locals,
+    typename Res, _std_simple_allocator Alloc = std::allocator<std::byte>>
 class basic_world;
 
 template <typename>
@@ -68,7 +73,8 @@ using index_t      = uint32_t;
 
 class future_entity_t {
 public:
-    constexpr explicit future_entity_t(index_t inframe_index) : identity_(inframe_index) {}
+    constexpr explicit future_entity_t(index_t inframe_index)
+        : identity_(inframe_index) {}
 
 private:
     index_t identity_;

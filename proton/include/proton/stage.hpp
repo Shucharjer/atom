@@ -21,12 +21,14 @@ struct staged_type_list {};
 
 template <stage Stage, typename TypeList>
 struct staged_type_list_from_value;
-template <stage Stage, template <typename...> typename Template, typename... Tys>
+template <
+    stage Stage, template <typename...> typename Template, typename... Tys>
 struct staged_type_list_from_value<Stage, Template<Tys...>> {
     using type = staged_type_list<Stage, Tys...>;
 };
 template <stage Stage, typename TypeList>
-using staged_type_list_from_value_t = typename staged_type_list_from_value<Stage, TypeList>::type;
+using staged_type_list_from_value_t =
+    typename staged_type_list_from_value<Stage, TypeList>::type;
 
 template <stage Stage, auto...>
 struct staged_value_list {};

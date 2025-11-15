@@ -7,9 +7,10 @@
 namespace proton {
 
 template <
-    template <typename...> typename Template, template <auto, typename...> typename Fn, auto Value,
-    typename... Requires>
-struct add_fn : neutron::adaptor_closure<add_fn<Template, Fn, Value, Requires...>> {
+    template <typename...> typename Template,
+    template <auto, typename...> typename Fn, auto Value, typename... Requires>
+struct add_fn :
+    neutron::adaptor_closure<add_fn<Template, Fn, Value, Requires...>> {
     using input_require  = world_require<void>;
     using output_type    = world_descriptor<>;
     using consteval_pipe = void;
@@ -22,10 +23,12 @@ struct add_fn : neutron::adaptor_closure<add_fn<Template, Fn, Value, Requires...
 };
 
 template <
-    template <typename...> typename Template, template <stage, auto, typename...> typename Fn,
-    stage Stage, auto Value, typename... Requires>
-struct add_staged_fn
-    : neutron::adaptor_closure<add_staged_fn<Template, Fn, Stage, Value, Requires...>> {
+    template <typename...> typename Template,
+    template <stage, auto, typename...> typename Fn, stage Stage, auto Value,
+    typename... Requires>
+struct add_staged_fn :
+    neutron::adaptor_closure<
+        add_staged_fn<Template, Fn, Stage, Value, Requires...>> {
     using input_require  = world_require<void>;
     using output_type    = world_descriptor<>;
     using consteval_pipe = void;
@@ -33,14 +36,16 @@ struct add_staged_fn
     template <typename WorldDesc>
     constexpr auto operator()(WorldDesc&&) const noexcept {
         return neutron::insert_type_list_inplace_t<
-            Template, Fn<Stage, Value, Requires...>, std::remove_cvref_t<WorldDesc>>{};
+            Template, Fn<Stage, Value, Requires...>,
+            std::remove_cvref_t<WorldDesc>>{};
     }
 };
 
 template <stage Stage, typename Desc>
 struct in_stage : std::false_type {};
 template <
-    stage Stage, template <stage, auto, typename...> typename Fn, auto System, typename... Requires>
+    stage Stage, template <stage, auto, typename...> typename Fn, auto System,
+    typename... Requires>
 struct in_stage<Stage, Fn<Stage, System, Requires...>> : std::true_type {};
 
 template <typename Desc>

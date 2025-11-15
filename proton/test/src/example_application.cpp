@@ -75,16 +75,22 @@ class timer {
 public:
     using resource_tag = void;
 
-    [[nodiscard]] auto update() const { return std::chrono::system_clock::now(); }
+    [[nodiscard]] auto update() const {
+        return std::chrono::system_clock::now();
+    }
 };
 
 void create_entities(commands commands);
 void echo_entities(query<with<const name&, health>>);
-void movement(res<const input<keyboard>&, const timer&>, single<with<transform&, player>>);
+void movement(
+    res<const input<keyboard>&, const timer&>,
+    single<with<transform&, player>>);
 void update_position(query<with<position&, direction>>);
 void render_objs(
-    query<with<const transform&, sprite>, without<>>, local<sprite_manager>, res<const timer&>);
-void modify_game_state(res<game_state>, query<with<health, player>, changed<health>>);
+    query<with<const transform&, sprite>, without<>>, local<sprite_manager>,
+    res<const timer&>);
+void modify_game_state(
+    res<game_state>, query<with<health, player>, changed<health>>);
 
 using enum stage;
 
@@ -123,7 +129,8 @@ void process_keyboard_input(res<input<keyboard>&> res) {
     // get input from device
 }
 void movement(
-    res<const input<keyboard>&, const timer&> res, single<with<transform&, player>> single) {
+    res<const input<keyboard>&, const timer&> res,
+    single<with<transform&, player>> single) {
     auto& [keyboard_input, time] = res;
     auto can_move                = [] { return false; };
     //
@@ -137,7 +144,9 @@ void update_position(query<with<position&, direction>> qry) {
     // }
 }
 void render_objs(
-    query<with<const transform&, sprite>> qry, local<sprite_manager> local, res<const timer&> res) {
+    query<with<const transform&, sprite>> qry, local<sprite_manager> local,
+    res<const timer&> res) {
     auto& [sprite_manager] = local;
 }
-void modify_game_state(res<game_state>, query<with<health, player>, changed<health>>) {}
+void modify_game_state(
+    res<game_state>, query<with<health, player>, changed<health>>) {}
