@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <new>
 #include <vector>
 #include "neutron/shift_map.hpp"
 #include "proton.hpp"
@@ -11,16 +12,27 @@
 
 namespace proton {
 
+/**
+ * @class command_buffer
+ * @brief A buffer stores commands in a single thread.
+ *
+ * @tparam Alloc
+ */
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
-class command_buffer {
+class alignas(std::hardware_destructive_interference_size) command_buffer {
     template <typename Ty>
     using _rebind_alloc_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
 public:
-    constexpr void new_frame() { inframe_index_.store(0); }
+    inline static thread_local command_buffer* buffer = nullptr;
+
+    constexpr void reset() {
+        inframe_index_ = 0;
+        commands_.clear();
+    }
 
     constexpr future_entity_t spawn() {
-        auto curr = inframe_index_.fetch_add(1);
+        auto curr = inframe_index_++;
         // put to buf
         return future_entity_t{ curr };
     }
@@ -58,15 +70,7 @@ public:
         //
     }
 
-    template <
-        typename ArchetypeAlloc, typename ArchetypesAlloc, size_t PageSize,
-        size_t Shift, typename EntitiesAlloc>
-    constexpr void execute(
-        std::vector<archetype<ArchetypeAlloc>, ArchetypesAlloc>& archetypes,
-        neutron::shift_map<entity_t, index_t, PageSize, Shift, EntitiesAlloc>&
-            entities) {
-        //
-    }
+    NODISCARD const auto& get() const noexcept { return commands_; }
 
 private:
     enum class command : uint8_t {
@@ -82,7 +86,7 @@ private:
     std::vector<command_block, _rebind_alloc_t<command_block>> commands_;
     std::vector<std::byte, _rebind_alloc_t<std::byte>> buffer_;
 
-    std::atomic<index_t> inframe_index_;
+    index_t inframe_index_;
 };
 
 } // namespace proton

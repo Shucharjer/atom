@@ -76,6 +76,8 @@ public:
     constexpr explicit future_entity_t(index_t inframe_index)
         : identity_(inframe_index) {}
 
+    NODISCARD index_t get() const noexcept { return identity_; }
+
 private:
     index_t identity_;
 };

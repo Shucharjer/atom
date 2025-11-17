@@ -9,22 +9,27 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "neutron/internal/spreader.hpp"
+#include "neutron/auxiliary.hpp"
 #include "neutron/type_hash.hpp"
 #include "proton/proton.hpp"
 
 namespace proton {
 
 struct metatype {
-    size_t size;
-    size_t align;
+    uint64_t trivially_relocatible : 1;
+    uint64_t _reserve : 15;
+    uint64_t align : 16;
+    uint64_t size : 32;
+
     void (*construct)(void*);
     void (*destroy)(void*);
 
     template <typename Ty>
     consteval static metatype make() noexcept {
-        return metatype{ .size      = std::is_empty_v<Ty> ? 0 : sizeof(Ty),
-                         .align     = std::is_empty_v<Ty> ? 0 : alignof(Ty),
+        return metatype{ .trivially_copyable = std::is_trivially_copyable_v<Ty>,
+                         ._reserve           = 0,
+                         .lign      = std::is_empty_v<Ty> ? 0 : alignof(Ty),
+                         .size      = std::is_empty_v<Ty> ? 0 : sizeof(Ty),
                          .construct = [](void* ptr) { ::new (ptr) Ty{}; },
                          .destroy =
                              [](void* ptr) { static_cast<Ty*>(ptr)->~Ty(); } };

@@ -1,0 +1,37 @@
+-   neutron:
+    -   new features:
+        bare_vector.  
+
+    -   test:
+
+    -   optimization:
+
+    -   fix:
+
+    -   document:
+
+
+-   proton:
+    -   new features:
+        async schedule with stdexec, including execution environment like command_buffer.  
+
+        SoA component storage.  
+
+    -   test:
+
+    -   optimization:
+
+    -   fix:
+
+    -   document:
+
+-   electron:
+    -   new features:
+
+    -   test:
+
+    -   optimization:
+
+    -   fix:
+
+    -   document:

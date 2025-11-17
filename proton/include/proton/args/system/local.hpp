@@ -2,7 +2,7 @@
 #include <tuple>
 #include <type_traits>
 #include "neutron/template_list.hpp"
-#include "proton/args/call_from_world.hpp"
+#include "proton/args/make_from_world.hpp"
 #include "proton/proton.hpp"
 #include "proton/system.hpp"
 #include "proton/world.hpp"
@@ -32,7 +32,7 @@ private:
 };
 
 template <auto Sys, typename... Args>
-struct call_from_world<Sys, local<Args...>> {
+struct make_from_world<Sys, local<Args...>> {
     template <typename Ty>
     using _predicate = _is_relevant_sys_tuple<Sys, Ty>;
 

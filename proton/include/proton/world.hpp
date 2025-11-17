@@ -9,9 +9,9 @@
 #include <neutron/shift_map.hpp>
 #include <neutron/type_hash.hpp>
 #include "proton/archetype.hpp"
-#include "proton/args/call_from_world.hpp"
+#include "proton/args/make_from_world.hpp"
 #include "proton/command_buffer.hpp"
-#include "proton/executor.hpp"
+#include "proton/execution.hpp"
 #include "proton/proton.hpp"
 #include "proton/stage.hpp"
 #include "proton/system.hpp"
@@ -23,6 +23,8 @@ class world_base {
     template <
         typename, typename, typename, typename, typename, _std_simple_allocator>
     friend class basic_world;
+
+    friend struct world_accessor;
 
     template <typename Ty>
     using _rebind_alloc_t = neutron::rebind_alloc_t<Alloc, Ty>;
@@ -120,7 +122,7 @@ private:
         struct call<Template<Args...>> {
             void operator()(basic_world* world) noexcept(
                 system_traits::is_nothrow) {
-                Sys(call_from_world<Sys, Args>{}(*world)...);
+                Sys(make_from_world<Sys, Args>{}(*world)...);
             }
         };
 
@@ -131,13 +133,19 @@ private:
     struct _call_system_list;
     template <template <auto...> typename Template, auto... Systems>
     struct _call_system_list<Template<Systems...>> {
-        template <typename Executor>
-        void operator()(Executor& executor, basic_world* self) {
-            executor
-                .template submit<[](basic_world* self) {
-                    _call_system<Systems>{}(self);
-                }...>(self)
-                .wait();
+        template <typename Scheduler>
+        void operator()(Scheduler& scheduler, basic_world* self) {
+            using namespace execution;
+            auto sender = when_all((schedule(scheduler) | then[self] {
+                thread_local command_buffer buf;
+                buf.new_frame();
+                return buf;
+            }));
+            // scheduler
+            //     .template submit<[](basic_world* self) {
+            //         _call_system<Systems>{}(self);
+            //     }...>(self)
+            //     .wait();
         }
     };
 
@@ -145,9 +153,9 @@ private:
     struct _call_run_list;
     template <stage Stage, typename... SysList>
     struct _call_run_list<staged_type_list<Stage, SysList...>> {
-        template <typename Executor>
-        void operator()(Executor& executor, basic_world* self) {
-            (_call_system_list<SysList>{}(executor, self), ...);
+        template <typename Scheduler>
+        void operator()(Scheduler& scheduler, basic_world* self) {
+            (_call_system_list<SysList>{}(scheduler, self), ...);
         }
     };
 
@@ -155,23 +163,18 @@ public:
     basic_world(const Alloc& alloc = Alloc{})
         : world_base<Alloc>(alloc), locals_(), resources_() {}
 
-    template <stage Stage, typename Executor = single_task_executor>
-    void call(const Executor& executor = Executor{}) {
+    template <stage Stage, typename Scheduler>
+    void call(Scheduler& scheduler) {
         using run_list = _get_systems<Stage>::type;
-        _call_run_list<run_list>{}(executor, this);
-    }
-
-    template <stage Stage, typename Executor = single_task_executor>
-    void call(Executor& executor) {
-        using run_list = _get_systems<Stage>::type;
-        _call_run_list<run_list>{}(executor, this);
+        _call_run_list<run_list>{}(scheduler, this);
+        _apply_commands();
     }
 
 private:
     /// variables could be use in only one specific system
     /// Locals are _sys_tuple, a tuple with system info, used to get the correct
     /// local for each sys
-    std::tuple<Locals...> locals_;
+    neutron::shared_tuple<Locals...> locals_;
     // variables could be pass between each systems
     neutron::shared_tuple<Reses...> resources_;
 
@@ -198,60 +201,30 @@ struct world_accessor {
     }
 };
 
-template <stage Stage, _world World, typename Executor = single_task_executor>
-void call(World& world, const Executor& executor = Executor{}) {
-    world.template call<Stage>(executor);
+template <stage Stage, _world World, typename Scheduler>
+void call(World& world, Scheduler& scheduler) {
+    world.template call<Stage>(scheduler);
 }
 
-template <stage Stage, _world World, typename Executor>
-void call(World& world, Executor& executor) {
-    world.template call<Stage>(executor);
-}
-
-template <
-    stage Stage, _world... Worlds, typename Executor = single_task_executor>
-void call(
-    std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
-    [&worlds, &executor]<size_t... Is>(std::index_sequence<Is...>) {
-        (std::get<Is>(worlds).template call<Stage>(executor), ...);
+template <stage Stage, _world... Worlds, typename Scheduler>
+void call(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
+    [&worlds, &scheduler]<size_t... Is>(std::index_sequence<Is...>) {
+        (std::get<Is>(worlds).template call<Stage>(scheduler), ...);
     }(std::index_sequence_for<Worlds...>());
 }
 
-template <stage Stage, _world... Worlds, typename Executor>
-void call(std::tuple<Worlds...>& worlds, Executor& executor) {
-    [&worlds, &executor]<size_t... Is>(std::index_sequence<Is...>) {
-        (std::get<Is>(worlds).template call<Stage>(executor), ...);
-    }(std::index_sequence_for<Worlds...>());
+template <_world... Worlds, typename Scheduler>
+void call_startup(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
+    call<stage::pre_startup>(worlds, scheduler);
+    call<stage::startup>(worlds, scheduler);
+    call<stage::post_startup>(worlds, scheduler);
 }
 
-template <_world... Worlds, typename Executor = single_task_executor>
-void call_startup(
-    std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
-    call<stage::pre_startup>(worlds, executor);
-    call<stage::startup>(worlds, executor);
-    call<stage::post_startup>(worlds, executor);
-}
-
-template <_world... Worlds, typename Executor>
-void call_startup(std::tuple<Worlds...>& worlds, Executor& executor) {
-    call<stage::pre_startup>(worlds, executor);
-    call<stage::startup>(worlds, executor);
-    call<stage::post_startup>(worlds, executor);
-}
-
-template <_world... Worlds, typename Executor = single_task_executor>
-void call_update(
-    std::tuple<Worlds...>& worlds, const Executor& executor = Executor{}) {
-    call<stage::pre_update>(worlds, executor);
-    call<stage::update>(worlds, executor);
-    call<stage::post_update>(worlds, executor);
-}
-
-template <_world... Worlds, typename Executor>
-void call_update(std::tuple<Worlds...>& worlds, Executor& executor) {
-    call<stage::pre_update>(worlds, executor);
-    call<stage::update>(worlds, executor);
-    call<stage::post_update>(worlds, executor);
+template <_world... Worlds, typename Scheduler>
+void call_update(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
+    call<stage::pre_update>(worlds, scheduler);
+    call<stage::update>(worlds, scheduler);
+    call<stage::post_update>(worlds, scheduler);
 }
 
 } // namespace proton

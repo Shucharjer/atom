@@ -63,6 +63,8 @@ CheckOptions:
     value:  '^[A-Z][A-Z0-9_]+$'
   - key:    readability-identifier-naming.MemberCase
     value:  lower_case
+  - key:    readability-identifier-naming.MemberIgnoredRegexp
+    value:  '_[a-zA-Z0-9_]*'
   - key:    readability-identifier-naming.MethodCase
     value:  lower_case
   - key:    readability-identifier-naming.NamespaceCase
