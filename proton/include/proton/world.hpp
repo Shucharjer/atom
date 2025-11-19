@@ -11,7 +11,6 @@
 #include "proton/archetype.hpp"
 #include "proton/args/make_from_world.hpp"
 #include "proton/command_buffer.hpp"
-#include "proton/execution.hpp"
 #include "proton/proton.hpp"
 #include "proton/stage.hpp"
 #include "proton/system.hpp"
@@ -135,17 +134,7 @@ private:
     struct _call_system_list<Template<Systems...>> {
         template <typename Scheduler>
         void operator()(Scheduler& scheduler, basic_world* self) {
-            using namespace execution;
-            auto sender = when_all((schedule(scheduler) | then[self] {
-                thread_local command_buffer buf;
-                buf.new_frame();
-                return buf;
-            }));
-            // scheduler
-            //     .template submit<[](basic_world* self) {
-            //         _call_system<Systems>{}(self);
-            //     }...>(self)
-            //     .wait();
+            // TODO: execution
         }
     };
 
@@ -225,6 +214,57 @@ void call_update(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
     call<stage::pre_update>(worlds, scheduler);
     call<stage::update>(worlds, scheduler);
     call<stage::post_update>(worlds, scheduler);
+}
+
+template <_std_simple_allocator Alloc>
+constexpr future_entity_t world_base<Alloc>::spawn() {
+    return future_entity_t{ index_t{} };
+}
+
+template <_std_simple_allocator Alloc>
+template <typename... Components>
+constexpr future_entity_t world_base<Alloc>::spawn() {
+    return future_entity_t{ index_t{} };
+}
+
+template <_std_simple_allocator Alloc>
+template <typename... Components>
+constexpr future_entity_t world_base<Alloc>::spawn(Components&&... components) {
+    return future_entity_t{ index_t{} };
+}
+
+template <_std_simple_allocator Alloc>
+template <typename... Components>
+constexpr void world_base<Alloc>::add_components(entity_t entity) {
+    //
+}
+
+template <_std_simple_allocator Alloc>
+template <typename... Components>
+constexpr void world_base<Alloc>::add_components(future_entity_t entity) {
+    //
+}
+
+template <_std_simple_allocator Alloc>
+template <typename... Components>
+constexpr void world_base<Alloc>::remove_components(entity_t entity) {
+    //
+}
+
+template <_std_simple_allocator Alloc>
+template <typename... Components>
+constexpr void world_base<Alloc>::remove_components(future_entity_t entity) {
+    //
+}
+
+template <_std_simple_allocator Alloc>
+constexpr void world_base<Alloc>::kill(entity_t entity) {
+    //
+}
+
+template <_std_simple_allocator Alloc>
+constexpr void world_base<Alloc>::kill(future_entity_t entity) {
+    //
 }
 
 } // namespace proton

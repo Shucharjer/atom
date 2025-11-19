@@ -24,6 +24,7 @@ struct before {};
 template <auto... Systems>
 struct after {};
 
+/*! @cond TURN_OFF_DOXYGEN */
 namespace internal {
 
 template <typename>
@@ -226,6 +227,7 @@ struct parse_same_stage_system_list<system_list<Systems...>> {
 };
 
 } // namespace internal
+/*! @endcond */
 
 template <auto WorldDesc>
 struct extract_systems {
