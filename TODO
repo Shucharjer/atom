@@ -1,10 +1,17 @@
 -   neutron:
     -   new features:
-        bare_vector.  
+        bare_vector: used to proxy the memory like a vecotr but do not holds allocator;  
+
+        basic execution support: reference p2300, but just implementate must;  
+
+        lifo_queue: last in first out queue. used to finish jobs just commited which would be in cache;  
+
+        static_context_thread_pool: a high performance thread pool with custom context.  
 
     -   test:
 
     -   optimization:
+        dense_map & shift_map: save the space of allocator by bare_vector;
 
     -   fix:
 
@@ -13,7 +20,7 @@
 
 -   proton:
     -   new features:
-        async schedule with stdexec, including execution environment like command_buffer.  
+        async schedule;  
 
         SoA component storage.  
 
