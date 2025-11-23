@@ -3,6 +3,7 @@ Checks: >
   bugprone-*,
   concurrency-*,
   cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-do-while,
   -cppcoreguidelines-owning-memory,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -cppcoreguidelines-pro-type-union-access,

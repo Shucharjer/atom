@@ -50,7 +50,7 @@ IncludeCategories:
       CaseSensitive: false
     # 本文件对应的头文件的优先级默认是0
 
-SortUsingDeclarations: LexicographicNumeric
+SortUsingDeclarations: Never
 
 # 权限修饰符的偏移
 AccessModifierOffset: -4
