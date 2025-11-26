@@ -2,7 +2,7 @@
 #include <neutron/pipeline.hpp>
 #include <neutron/template_list.hpp>
 #include "proton/stage.hpp"
-#include "proton/world_desc.hpp"
+#include "proton/proton.hpp"
 
 namespace proton {
 
@@ -10,11 +10,7 @@ template <
     template <typename...> typename Template,
     template <auto, typename...> typename Fn, auto Value, typename... Requires>
 struct add_fn :
-    neutron::adaptor_closure<add_fn<Template, Fn, Value, Requires...>> {
-    using input_require  = world_require<void>;
-    using output_type    = world_descriptor<>;
-    using consteval_pipe = void;
-
+    descriptor_adaptor_closure<add_fn<Template, Fn, Value, Requires...>> {
     template <typename WorldDesc>
     constexpr auto operator()(WorldDesc&&) const noexcept {
         return neutron::insert_type_list_inplace_t<
@@ -27,12 +23,8 @@ template <
     template <stage, auto, typename...> typename Fn, stage Stage, auto Value,
     typename... Requires>
 struct add_staged_fn :
-    neutron::adaptor_closure<
+    descriptor_adaptor_closure<
         add_staged_fn<Template, Fn, Stage, Value, Requires...>> {
-    using input_require  = world_require<void>;
-    using output_type    = world_descriptor<>;
-    using consteval_pipe = void;
-
     template <typename WorldDesc>
     constexpr auto operator()(WorldDesc&&) const noexcept {
         return neutron::insert_type_list_inplace_t<

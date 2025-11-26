@@ -2,6 +2,7 @@
 #include <memory>
 #include <type_traits>
 #include <neutron/template_list.hpp>
+#include <neutron/type_traits.hpp>
 #include "proton.hpp"
 #include "proton/args/common/query.hpp"
 #include "proton/args/system/local.hpp"
@@ -76,17 +77,17 @@ struct _registry {
 
     using components = std::remove_pointer_t<decltype([] {
         using namespace neutron;
-        using querys            = type_list_filt_type_list_t<query, querys>;
-        using combined_t        = type_list_conbine_t<querys>;
-        using with_like_only_t  = type_list_filt_t<_is_with_like, combined_t>;
-        using exposed_with_t    = type_list_expose_t<with, with_like_only_t>;
-        using exposed_without_t = type_list_expose_t<without, exposed_with_t>;
+        using querys           = type_list_filt_type_list_t<query, querys>;
+        using combined_t       = type_list_conbine_t<querys>;
+        using with_like_only_t = type_list_filt_t<_is_with_like, combined_t>;
+        using exposed_with_t =
+            type_list_recurse_expose_t<with, with_like_only_t>;
+        using exposed_without_t =
+            type_list_recurse_expose_t<without, exposed_with_t>;
         using exposed_withany_t =
-            type_list_expose_t<withany, exposed_without_t>;
-        using removed_cvref_t =
-            type_list_convert_t<std::remove_cvref, exposed_withany_t>;
+            type_list_recurse_expose_t<withany, exposed_without_t>;
         using exposed_bundle_t =
-            type_list_recurse_expose_t<bundle, removed_cvref_t>;
+            type_list_recurse_expose_t<bundle, exposed_withany_t>;
         using unique_type_t = unique_type_list_t<exposed_bundle_t>;
         using type          = unique_type_t;
         return static_cast<type*>(nullptr);
@@ -140,19 +141,8 @@ struct registry {
 template <
     auto... WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
 auto make_worlds(const Alloc& alloc = Alloc{}) {
-    // clang-format off
-    return std::tuple<
-        basic_world<
-            typename registry<WorldDesc>::components,
-            typename registry<WorldDesc>::system_list,
-            typename registry<WorldDesc>::observers,
-            typename registry<WorldDesc>::locals,
-            typename registry<WorldDesc>::resources,
-            Alloc
-            >
-        ...
-    >();
-    // clang-format on
+    return neutron::shared_tuple<basic_world<registry<WorldDesc>, Alloc>...>(
+        alloc);
 }
 
 } // namespace proton

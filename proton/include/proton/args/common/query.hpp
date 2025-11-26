@@ -28,7 +28,7 @@ public:
 private:
 };
 
-template <_comp_or_bundle... Comps>
+template <component_like... Comps>
 struct changed {};
 
 template <typename>
@@ -78,7 +78,7 @@ requires(
     (_query_filter<query_filter<Filters>> && ...))
 class query<Filters...> {
 public:
-    template <_world World>
+    template <world World>
     explicit query(World& world) {
         auto& archetypes = world_accessor::archetypes(world);
         archetypes_.resize(archetypes.size());

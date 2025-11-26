@@ -19,14 +19,13 @@ namespace proton {
 
 template <_std_simple_allocator Alloc>
 class world_base {
-    template <
-        typename, typename, typename, typename, typename, _std_simple_allocator>
+    template <typename, _std_simple_allocator>
     friend class basic_world;
 
     friend struct world_accessor;
 
     template <typename Ty>
-    using _rebind_alloc_t = neutron::rebind_alloc_t<Alloc, Ty>;
+    using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
     using archetype = archetype<Alloc>;
 
@@ -62,34 +61,26 @@ public:
 private:
     ///
     /// vector<archetype>
-    std::vector<archetype, _rebind_alloc_t<archetype>> archetypes_;
+    std::vector<archetype, _allocator_t<archetype>> archetypes_;
     /// mapping entity to the archetype stores it
     /// shift_map<entity_t, id_t>
     neutron::shift_map<entity_t, index_t, 32UL, sizeof(entity_t) * 4UL, Alloc>
         entities_;
 };
 
-// clang-format off
-template <
-    template <typename...> typename CompList, _comp_or_bundle... Comps,
-    typename SystemLists,
-    typename Observers,
-    typename... Locals,
-    template <typename...> typename ResList, _res_or_bundle... Reses,
-    _std_simple_allocator Alloc>
-// clang-format on
-class basic_world<
-    CompList<Comps...>, SystemLists, Observers, neutron::type_list<Locals...>,
-    ResList<Reses...>, Alloc> : world_base<Alloc> {
+template <typename Registry, _std_simple_allocator Alloc>
+class basic_world : world_base<Alloc> {
     friend struct world_accessor;
 
     template <typename Ty>
-    using _rebind_alloc_t = neutron::rebind_alloc_t<Alloc, Ty>;
+    using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
 public:
-    using components   = CompList<Comps...>;
-    using system_lists = SystemLists;
-    using locals       = std::tuple<Locals...>;
+    using components   = typename Registry::components;
+    using resources    = typename Registry::resources;
+    using system_lists = typename Registry::system_list;
+    using systems      = typename Registry::systems;
+    using locals       = typename Registry::locals;
 
     using archetype = archetype<Alloc>;
 
@@ -149,67 +140,68 @@ private:
     };
 
 public:
-    basic_world(const Alloc& alloc = Alloc{})
-        : world_base<Alloc>(alloc), locals_(), resources_() {}
+    template <typename Al = Alloc>
+    basic_world(const Al& alloc = {})
+        : world_base<Alloc>(alloc), resources_(), locals_() {}
 
     template <stage Stage, typename Scheduler>
     void call(Scheduler& scheduler) {
         using run_list = _get_systems<Stage>::type;
         _call_run_list<run_list>{}(scheduler, this);
-        _apply_commands();
+        // _apply_commands();
     }
 
 private:
     /// variables could be use in only one specific system
     /// Locals are _sys_tuple, a tuple with system info, used to get the correct
     /// local for each sys
-    neutron::shared_tuple<Locals...> locals_;
+    neutron::type_list_rebind_t<std::tuple, locals> locals_;
     // variables could be pass between each systems
-    neutron::shared_tuple<Reses...> resources_;
+    neutron::type_list_rebind_t<neutron::shared_tuple, resources> resources_;
 
     // constexpr static auto components_hash =
     // neutron::make_hash_array<components>();
 };
 
 struct world_accessor {
-    template <_world World>
+    template <world World>
     static auto& archetypes(World& world) noexcept {
         return world.archetypes_;
     }
-    template <_world World>
+    template <world World>
     static auto& entities(World& world) noexcept {
         return world.entities_;
     }
-    template <_world World>
+    template <world World>
     static auto& locals(World& world) noexcept {
         return world.locals_;
     }
-    template <_world World>
+    template <world World>
     static auto& resources(World& world) noexcept {
         return world.resources_;
     }
 };
 
-template <stage Stage, _world World, typename Scheduler>
+template <stage Stage, world World, typename Scheduler>
 void call(World& world, Scheduler& scheduler) {
     world.template call<Stage>(scheduler);
 }
 
-template <stage Stage, _world... Worlds, typename Scheduler>
+template <stage Stage, world... Worlds, typename Scheduler>
 void call(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
     [&worlds, &scheduler]<size_t... Is>(std::index_sequence<Is...>) {
         (std::get<Is>(worlds).template call<Stage>(scheduler), ...);
     }(std::index_sequence_for<Worlds...>());
 }
 
-template <_world... Worlds, typename Scheduler>
+template <world... Worlds, typename Scheduler>
 void call_startup(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
     call<stage::pre_startup>(worlds, scheduler);
     call<stage::startup>(worlds, scheduler);
     call<stage::post_startup>(worlds, scheduler);
 }
 
-template <_world... Worlds, typename Scheduler>
+template <world... Worlds, typename Scheduler>
 void call_update(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
     call<stage::pre_update>(worlds, scheduler);
     call<stage::update>(worlds, scheduler);

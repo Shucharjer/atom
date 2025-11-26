@@ -16,19 +16,19 @@ public:
 
     std::pair<entity_t, bool> spawn();
 
-    template <_comp_or_bundle... Components>
+    template <component_like... Components>
     std::pair<entity_t, bool> spawn();
 
-    template <_comp_or_bundle... Components>
+    template <component_like... Components>
     std::pair<entity_t, bool> spawn(Components&&... components);
 
-    template <_comp_or_bundle... Components>
+    template <component_like... Components>
     void append(entity_t entity);
 
-    template <_comp_or_bundle... Components>
+    template <component_like... Components>
     void append(entity_t entity, Components&&... components);
 
-    template <_comp_or_bundle... Components>
+    template <component_like... Components>
     void remove(entity_t entity);
 
     void kill(uint64_t entity);

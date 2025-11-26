@@ -18,6 +18,6 @@ constexpr inline add_staged_fn<observer_list, _observer, Stage, Observer>
 
 template <auto WorldDesc>
 using extract_observers_t =
-    neutron::type_list_filt_type_list_t<observer_list, desc_t<WorldDesc>>;
+    neutron::type_list_filt_type_list_t<observer_list, std::remove_cvref_t<decltype(WorldDesc)>>;
 
 } // namespace proton

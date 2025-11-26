@@ -4,31 +4,31 @@
 #include <string>
 #include <neutron/print.hpp>
 #include <neutron/template_list.hpp>
+#include <neutron/type_hash.hpp>
 #include <proton/args/common/commands.hpp>
 #include <proton/args/common/query.hpp>
-#include <proton/args/common/single.hpp>
 #include <proton/args/system/local.hpp>
 #include <proton/args/system/res.hpp>
 #include <proton/observer.hpp>
 #include <proton/proton.hpp>
 #include <proton/registry.hpp>
+#include <proton/run.hpp>
 #include <proton/stage.hpp>
 #include <proton/system.hpp>
 #include <proton/world.hpp>
-#include "neutron/type_hash.hpp"
 
 using namespace proton;
 
 struct name {
-    using component_tag = void;
+    using component_concept = component_t;
     std::string value;
 };
 struct health {
-    using component_tag = void;
+    using component_concept = component_t;
     float value;
 };
 struct game_state {
-    using resource_tag = void;
+    using resource_concept = resource_t;
     enum _state : uint8_t {
         menu,
         started,
@@ -38,12 +38,12 @@ struct game_state {
     _state value;
 };
 struct position {
-    using component_tag = void;
+    using component_concept = component_t;
     int x;
     int y;
 };
 struct direction {
-    using component_tag = void;
+    using component_concept = component_t;
     enum : uint8_t {
         left  = 0,
         up    = 1,
@@ -53,17 +53,17 @@ struct direction {
 };
 using transform = bundle<position, direction>;
 struct sprite {
-    using component_tag = void;
+    using component_concept = component_t;
     uint32_t handle;
 };
 struct player {
-    using component_tag = void;
+    using component_concept = component_t;
 };
 
 struct sprite_manager {};
 template <typename Ty>
 struct input : public Ty {
-    using resource_tag = void;
+    using resource_concept = resource_t;
 };
 class keyboard {
 public:
@@ -73,7 +73,7 @@ class timer {
     std::chrono::time_point<std::chrono::system_clock> now_;
 
 public:
-    using resource_tag = void;
+    using resource_concept = resource_t;
 
     [[nodiscard]] auto update() const {
         return std::chrono::system_clock::now();
@@ -83,11 +83,10 @@ public:
 void create_entities(commands commands);
 void echo_entities(query<with<const name&, health>>);
 void movement(
-    res<const input<keyboard>&, const timer&>,
-    single<with<transform&, player>>);
+    res<const input<keyboard>&, const timer&>, query<with<transform&, player>>);
 void update_position(query<with<position&, direction>>);
 void render_objs(
-    query<with<const transform&, sprite>, without<>>, local<sprite_manager>,
+    query<with<const transform&, sprite>>, local<sprite_manager>,
     res<const timer&>);
 void modify_game_state(
     res<game_state>, query<with<health, player>, changed<health>>);
@@ -106,13 +105,14 @@ constexpr auto world = world_desc
     ;
 // clang-format on
 
-using reg   = _registry<::world>;
-using syss  = _registry<::world>::systems::all_systems;
-using qrys  = _registry<::world>::querys;
-using comps = _registry<::world>::components;
+using reg   = registry<::world>;
+using _reg  = _registry<::world>;
+using syss  = reg::systems::all_systems;
+using qrys  = _reg::querys;
+using comps = reg::components;
 // using comps  = reg::components;
 using psdsys = reg::systems;
-using slist  = _registry<::world>::system_list;
+using slist  = reg::system_list;
 using res_t  = reg::resources;
 using locals = reg::locals;
 using obses  = reg::observers;
@@ -130,7 +130,7 @@ void process_keyboard_input(res<input<keyboard>&> res) {
 }
 void movement(
     res<const input<keyboard>&, const timer&> res,
-    single<with<transform&, player>> single) {
+    query<with<transform&, player>> single) {
     auto& [keyboard_input, time] = res;
     auto can_move                = [] { return false; };
     //

@@ -231,8 +231,8 @@ struct parse_same_stage_system_list<system_list<Systems...>> {
 
 template <auto WorldDesc>
 struct extract_systems {
-    using type =
-        neutron::type_list_filt_type_list_t<system_list, desc_t<WorldDesc>>;
+    using type = neutron::type_list_filt_type_list_t<
+        system_list, std::remove_cvref_t<decltype(WorldDesc)>>;
 };
 template <auto WorldDesc>
 using extract_systems_t = typename extract_systems<WorldDesc>::type;

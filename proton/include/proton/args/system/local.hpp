@@ -36,7 +36,7 @@ struct make_from_world<Sys, local<Args...>> {
     template <typename Ty>
     using _predicate = _is_relevant_sys_tuple<Sys, Ty>;
 
-    template <_world World>
+    template <world World>
     local<Args...>& operator()(World& world) {
         using sys_tuple =
             neutron::type_list_filt_t<_predicate, typename World::locals>;

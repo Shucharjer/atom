@@ -5,7 +5,7 @@ namespace proton {
 
 template <auto Sys, typename Ty>
 struct make_from_world {
-    template <_world World>
+    template <world World>
     Ty operator()(World& world) {
         return Ty{ world };
     }
