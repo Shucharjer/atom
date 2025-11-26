@@ -8,6 +8,7 @@
 // #include <neutron/thread_pool.hpp>
 #include <neutron/parallel.hpp>
 #include <proton/registry.hpp>
+#include "neutron/execution.hpp"
 #include "proton/command_buffer.hpp"
 #include "proton/stage.hpp"
 #include "proton/world.hpp"
