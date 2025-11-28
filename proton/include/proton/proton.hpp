@@ -2,6 +2,7 @@
 #include <concepts>
 #include <memory>
 #include <type_traits>
+#include <vector>
 #include <neutron/memory.hpp>
 #include <neutron/pipeline.hpp>
 #include <neutron/template_list.hpp>
@@ -67,6 +68,9 @@ struct _is_bundle : std::false_type {};
 template <typename... Args>
 struct _is_bundle<bundle<Args...>> : std::true_type {};
 
+template <typename Ty>
+using _rmcvref_is_bundle = _is_bundle<std::remove_cvref_t<Ty>>;
+
 } // namespace internal
 /* @endcond */
 
@@ -83,7 +87,7 @@ concept component = requires {
     typename std::remove_cvref_t<Ty>::component_concept;
     requires std::derived_from<
         typename std::remove_cvref_t<Ty>::component_concept, component_t>;
-} || as_component<Ty>;
+} || as_component<std::remove_cvref_t<Ty>>;
 
 /*! @cond TURN_OFF_DOXYGEN */
 namespace internal {
@@ -99,17 +103,9 @@ struct _is_component {
 template <typename Ty>
 concept component_like =
     component<Ty> ||
-    (_bundle<Ty> &&
-     neutron::type_list_requires_recurse<
-         internal::_is_component, Ty, internal::_is_bundle>::value);
-
-struct tcomp {};
-struct tcomp2 {};
-
-template <>
-constexpr bool as_component<tcomp> = true;
-template <>
-constexpr bool as_component<tcomp2> = true;
+    (_bundle<Ty> && neutron::type_list_requires_recurse<
+                        internal::_is_component, Ty, internal::_is_bundle,
+                        std::remove_cvref_t>::value);
 
 struct resource_t {};
 
@@ -121,7 +117,7 @@ concept resource = requires {
     typename std::remove_cvref_t<Ty>::resource_concept;
     requires std::derived_from<
         typename std::remove_cvref_t<Ty>::resource_concept, resource_t>;
-} || as_resource<Ty>;
+} || as_resource<std::remove_cvref_t<Ty>>;
 
 /*! @cond TURN_OFF_DOXYGEN */
 namespace internal {
@@ -137,15 +133,21 @@ struct _is_resource {
 template <typename Ty>
 concept resource_like =
     resource<Ty> ||
-    (_bundle<Ty> &&
-     neutron::type_list_requires_recurse<internal::_is_resource, Ty>::value);
+    (_bundle<Ty> && neutron::type_list_requires_recurse<
+                        internal::_is_resource, Ty, internal::_is_bundle,
+                        std::remove_cvref_t>::value);
 
 using neutron::_std_simple_allocator;
 using neutron::rebind_alloc_t;
 
+// world.world
 template <
     typename Registry, _std_simple_allocator Alloc = std::allocator<std::byte>>
 class basic_world;
+
+// template <_std_simple_allocator Alloc>
+// class basic_world<registry<world_desc>, Alloc> is constructible but not
+// runnable.
 
 /*! @cond TURN_OFF_DOXYGEN */
 namespace internal {
@@ -154,8 +156,8 @@ template <typename>
 constexpr bool _is_basic_world = false;
 template <typename... Args>
 constexpr bool _is_basic_world<basic_world<Args...>> = true;
-} // namespace internal
 
+} // namespace internal
 /* @endcond */
 
 template <typename Ty>
@@ -165,15 +167,69 @@ using entity_t     = uint64_t;
 using generation_t = uint32_t;
 using index_t      = uint32_t;
 
+/**
+ * @brief Future entity.
+ * It mainly used in command_buffer.
+ */
 class future_entity_t {
 public:
     constexpr explicit future_entity_t(index_t inframe_index)
         : identity_(inframe_index) {}
 
-    NODISCARD index_t get() const noexcept { return identity_; }
+    NODISCARD constexpr index_t get() const noexcept { return identity_; }
 
 private:
     index_t identity_;
+};
+
+template <auto Sys, typename Argument>
+struct construct_from_world_t {
+    template <world World>
+    constexpr Argument operator()(World& world) {
+        return Argument{ world };
+    }
+};
+
+template <auto Descriptor>
+class registry;
+
+class commands;
+
+template <auto Sys, typename Arg>
+constexpr inline construct_from_world_t<Sys, Arg> construct_from_world;
+
+template <auto Sys, typename Arg>
+concept constructible_from_world = requires {
+    {
+        construct_from_world<Sys, Arg>(
+            std::declval<basic_world<registry<world_desc>>>())
+    } -> std::same_as<Arg>;
+};
+
+template <auto Sys, typename T = decltype(Sys)>
+constexpr inline bool _valid_system = false;
+template <auto Sys, typename Ret, typename... Args>
+constexpr inline bool _valid_system<Sys, Ret (*)(Args...)> =
+    (std::same_as<Ret, void> || std::same_as<Ret, commands>) &&
+    (constructible_from_world<Sys, Args> && ...);
+
+template <auto Sys>
+concept system = _valid_system<Sys>;
+
+template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+class archetype;
+
+template <typename Filter>
+concept query_filter = requires(
+    Filter& filter, std::vector<archetype<>>& out,
+    const std::vector<archetype<>>& archetypes) {
+    filter.init(out, archetypes);
+    filter.fetch(out, archetypes);
+};
+
+template <typename... Filters>
+class query {
+    consteval query() noexcept = default; // only for deducing
 };
 
 } // namespace proton

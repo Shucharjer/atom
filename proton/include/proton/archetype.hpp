@@ -58,7 +58,7 @@ struct hive_access {
 template <typename... Ty>
 consteval auto make_accesses() noexcept {}
 
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+template <_std_simple_allocator Alloc>
 class archetype {
     template <typename Ty>
     using _allocator_t = rebind_alloc_t<Alloc, Ty>;

@@ -1,71 +1,37 @@
 #pragma once
+#include "proton/proton.hpp"
+
 #include <cstddef>
-#include <memory>
 #include <type_traits>
 #include <utility>
-#include <vector>
 #include <neutron/memory.hpp>
 #include <neutron/shared_tuple.hpp>
 #include <neutron/shift_map.hpp>
 #include <neutron/type_hash.hpp>
-#include "proton/archetype.hpp"
-#include "proton/args/make_from_world.hpp"
-#include "proton/command_buffer.hpp"
-#include "proton/proton.hpp"
+#include "proton.hpp"
+#include "proton/registry.hpp"
 #include "proton/stage.hpp"
 #include "proton/system.hpp"
+#include "proton/world_base.hpp"
 
 namespace proton {
 
 template <_std_simple_allocator Alloc>
-class world_base {
-    template <typename, _std_simple_allocator>
-    friend class basic_world;
-
+class basic_world<registry<world_desc>, Alloc> : world_base<Alloc> {
     friend struct world_accessor;
 
-    template <typename Ty>
-    using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
-
-    using archetype = archetype<Alloc>;
-
 public:
+    using registry_t   = registry<world_desc>;
+    using components   = typename registry_t::components;
+    using resources    = typename registry_t::resources;
+    using system_lists = typename registry_t::system_list;
+    using systems      = typename registry_t::systems;
+    using locals       = typename registry_t::locals;
+    using archetype    = typename world_base<Alloc>::archetype;
+
     template <typename Al = Alloc>
-    constexpr world_base(const Al& alloc = Alloc{})
-        : archetypes_(alloc), entities_(alloc) {}
-
-    constexpr future_entity_t spawn();
-
-    template <typename... Components>
-    constexpr future_entity_t spawn();
-
-    template <typename... Components>
-    constexpr future_entity_t spawn(Components&&... components);
-
-    template <typename... Components>
-    constexpr void add_components(entity_t entity);
-
-    template <typename... Components>
-    constexpr void add_components(future_entity_t entity);
-
-    template <typename... Components>
-    constexpr void remove_components(entity_t entity);
-
-    template <typename... Components>
-    constexpr void remove_components(future_entity_t entity);
-
-    constexpr void kill(entity_t entity);
-
-    constexpr void kill(future_entity_t entity);
-
-private:
-    ///
-    /// vector<archetype>
-    std::vector<archetype, _allocator_t<archetype>> archetypes_;
-    /// mapping entity to the archetype stores it
-    /// shift_map<entity_t, id_t>
-    neutron::shift_map<entity_t, index_t, 32UL, sizeof(entity_t) * 4UL, Alloc>
-        entities_;
+    constexpr explicit basic_world(const Al& alloc = {})
+        : world_base<Alloc>(alloc) {}
 };
 
 template <typename Registry, _std_simple_allocator Alloc>
@@ -76,19 +42,15 @@ class basic_world : world_base<Alloc> {
     using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
 public:
-    using components   = typename Registry::components;
-    using resources    = typename Registry::resources;
-    using system_lists = typename Registry::system_list;
-    using systems      = typename Registry::systems;
-    using locals       = typename Registry::locals;
-
-    using archetype = archetype<Alloc>;
+    using registry_t   = Registry;
+    using components   = typename registry_t::components;
+    using resources    = typename registry_t::resources;
+    using system_lists = typename registry_t::system_list;
+    using systems      = typename registry_t::systems;
+    using locals       = typename registry_t::locals;
+    using archetype    = typename world_base<Alloc>::archetype;
 
 private:
-    template <typename Ty>
-    using allocator_t =
-        typename std::allocator_traits<Alloc>::template rebind_alloc<Ty>;
-
     template <stage Stage>
     struct _get_systems {
         template <typename Ty>
@@ -112,7 +74,7 @@ private:
         struct call<Template<Args...>> {
             void operator()(basic_world* world) noexcept(
                 system_traits::is_nothrow) {
-                Sys(make_from_world<Sys, Args>{}(*world)...);
+                Sys(construct_from_world<Sys, Args>(*world)...);
             }
         };
 
@@ -141,7 +103,7 @@ private:
 
 public:
     template <typename Al = Alloc>
-    basic_world(const Al& alloc = {})
+    constexpr explicit basic_world(const Al& alloc = {})
         : world_base<Alloc>(alloc), resources_(), locals_() {}
 
     template <stage Stage, typename Scheduler>
@@ -161,25 +123,6 @@ private:
 
     // constexpr static auto components_hash =
     // neutron::make_hash_array<components>();
-};
-
-struct world_accessor {
-    template <world World>
-    static auto& archetypes(World& world) noexcept {
-        return world.archetypes_;
-    }
-    template <world World>
-    static auto& entities(World& world) noexcept {
-        return world.entities_;
-    }
-    template <world World>
-    static auto& locals(World& world) noexcept {
-        return world.locals_;
-    }
-    template <world World>
-    static auto& resources(World& world) noexcept {
-        return world.resources_;
-    }
 };
 
 template <stage Stage, world World, typename Scheduler>
@@ -206,57 +149,6 @@ void call_update(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
     call<stage::pre_update>(worlds, scheduler);
     call<stage::update>(worlds, scheduler);
     call<stage::post_update>(worlds, scheduler);
-}
-
-template <_std_simple_allocator Alloc>
-constexpr future_entity_t world_base<Alloc>::spawn() {
-    return future_entity_t{ index_t{} };
-}
-
-template <_std_simple_allocator Alloc>
-template <typename... Components>
-constexpr future_entity_t world_base<Alloc>::spawn() {
-    return future_entity_t{ index_t{} };
-}
-
-template <_std_simple_allocator Alloc>
-template <typename... Components>
-constexpr future_entity_t world_base<Alloc>::spawn(Components&&... components) {
-    return future_entity_t{ index_t{} };
-}
-
-template <_std_simple_allocator Alloc>
-template <typename... Components>
-constexpr void world_base<Alloc>::add_components(entity_t entity) {
-    //
-}
-
-template <_std_simple_allocator Alloc>
-template <typename... Components>
-constexpr void world_base<Alloc>::add_components(future_entity_t entity) {
-    //
-}
-
-template <_std_simple_allocator Alloc>
-template <typename... Components>
-constexpr void world_base<Alloc>::remove_components(entity_t entity) {
-    //
-}
-
-template <_std_simple_allocator Alloc>
-template <typename... Components>
-constexpr void world_base<Alloc>::remove_components(future_entity_t entity) {
-    //
-}
-
-template <_std_simple_allocator Alloc>
-constexpr void world_base<Alloc>::kill(entity_t entity) {
-    //
-}
-
-template <_std_simple_allocator Alloc>
-constexpr void world_base<Alloc>::kill(future_entity_t entity) {
-    //
 }
 
 } // namespace proton

@@ -1,21 +1,15 @@
 #pragma once
+#include "proton/proton.hpp"
+
 #include <cstdint>
 #include <numeric>
 #include <unordered_map>
 #include <vector>
 #include <neutron/template_list.hpp>
 #include "proton/archetype.hpp"
-#include "proton/args/qualifier.hpp"
-#include "proton/proton.hpp"
-#include "proton/world.hpp"
+#include "proton/world_accessor.hpp"
 
 namespace proton {
-
-template <typename...>
-class query {
-    // only for type deducing
-    consteval query() noexcept = default;
-};
 
 class _query_iterator {
 public:
@@ -28,54 +22,67 @@ public:
 private:
 };
 
-template <component_like... Comps>
-struct changed {};
+template <component_like...>
+struct with;
+template <component_like...>
+struct without;
+template <component_like...>
+struct withany;
+template <component_like...>
+struct changed;
 
-template <typename>
-struct query_filter;
-template <typename... Args>
-struct query_filter<with<Args...>> {
-    static void init(auto& result, const auto& archetypes) noexcept {}
-    static void filt(auto& result, const auto& archetypes) {}
+template <component_like... Args>
+struct with {
+    using conflict_list = without<Args...>;
+    constexpr void init(auto& out, const auto& archetypes) {}
+    constexpr void fetch(auto& out, const auto& archetype) {}
 };
 
-template <typename>
-struct query_filter;
-template <typename... Args>
-struct query_filter<without<Args...>> {
-    static void init(auto& result, const auto& archetypes) noexcept {}
-    static void filt(auto& result, const auto& archetypes) {}
+template <component_like... Args>
+struct without {
+    using confilct_list = with<Args...>;
+    constexpr void init(auto& out, const auto& archetypes) {}
+    constexpr void fetch(auto& out, const auto& archetype) {}
 };
 
-template <typename>
-struct query_filter;
-template <typename... Args>
-struct query_filter<withany<Args...>> {
-    static void init(auto& result, const auto& archetypes) noexcept {}
-    static void filt(auto& result, const auto& archetypes) {}
+template <component_like... Args>
+struct withany {
+    using conflict_list = without<Args...>;
+    constexpr void init(auto& out, const auto& archetypes) {}
+    constexpr void fetch(auto& out, const auto& archetype) {}
 };
 
-template <typename>
-struct query_filter;
-template <typename... Args>
-struct query_filter<changed<Args...>> {
-    static void init(auto& result, const auto& archetypes) noexcept {}
-    static void filt(auto& result, const auto& archetypes) {}
+template <component_like... Args>
+struct changed {
+    using conflict_list = without<Args...>;
+    constexpr void init(auto& out, const auto& archetypes) {}
+    constexpr void fetch(auto& out, const auto& archetype) {}
 };
 
 template <typename Ty>
-concept _query_filter = requires(
-    std::vector<id_t>& result,
-    // prefer const auto&
-    const std::vector<archetype<>>& archetypes) {
-    Ty::init(result, archetypes);
-    Ty::filt(result, archetypes);
+struct _is_with_like {
+    constexpr static auto value =
+        neutron::is_specific_type_list_v<with, Ty> ||
+        neutron::is_specific_type_list_v<without, Ty> ||
+        neutron::is_specific_type_list_v<withany, Ty>;
 };
 
-template <typename... Filters>
-requires(
-    _with_obj_assert<Filters...>() &&
-    (_query_filter<query_filter<Filters>> && ...))
+template <typename Ty>
+struct _is_with : neutron::is_specific_type_list<with, Ty> {};
+template <typename Ty>
+constexpr auto _is_with_v = _is_with<Ty>::value;
+
+template <typename Ty>
+struct _is_without : neutron::is_specific_type_list<without, Ty> {};
+template <typename Ty>
+constexpr auto _is_without_v = _is_without<Ty>::value;
+
+template <typename Ty>
+struct _is_with_any : neutron::is_specific_type_list<withany, Ty> {};
+template <typename Ty>
+constexpr auto _is_with_any_v = _is_with_any<Ty>::value;
+
+template <query_filter... Filters>
 class query<Filters...> {
 public:
     template <world World>
@@ -83,7 +90,7 @@ public:
         auto& archetypes = world_accessor::archetypes(world);
         archetypes_.resize(archetypes.size());
         std::iota(archetypes_.begin(), archetypes_.end(), 0);
-        (query_filter<Filters>::init(archetypes_, archetypes), ...);
+        (Filters::init(archetypes_, archetypes), ...);
     }
 
     auto get();

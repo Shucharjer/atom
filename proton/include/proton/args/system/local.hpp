@@ -2,10 +2,9 @@
 #include <tuple>
 #include <type_traits>
 #include "neutron/template_list.hpp"
-#include "proton/args/make_from_world.hpp"
 #include "proton/proton.hpp"
 #include "proton/system.hpp"
-#include "proton/world.hpp"
+#include "proton/world_accessor.hpp"
 
 namespace proton {
 
@@ -32,7 +31,7 @@ private:
 };
 
 template <auto Sys, typename... Args>
-struct make_from_world<Sys, local<Args...>> {
+struct construct_from_world_t<Sys, local<Args...>> {
     template <typename Ty>
     using _predicate = _is_relevant_sys_tuple<Sys, Ty>;
 

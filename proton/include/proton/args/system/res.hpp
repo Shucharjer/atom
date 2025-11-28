@@ -4,7 +4,7 @@
 #include <type_traits>
 #include <neutron/template_list.hpp>
 #include "proton/proton.hpp"
-#include "proton/world.hpp"
+#include "proton/world_accessor.hpp"
 
 namespace proton {
 

@@ -16,16 +16,9 @@ namespace proton {
 template <auto Sys, typename>
 struct _sys_t {};
 
-template <auto Obj>
-struct _get_type {
-    using type = std::remove_cvref_t<decltype(Obj)>;
-};
-template <auto Obj>
-using _get_type_t = typename _get_type<Obj>::type;
-
 template <auto Desc>
 struct _registry {
-    using desc_type = _get_type<Desc>;
+    using desc_type = std::remove_cvref_t<decltype(Desc)>;
 
     // value_list<auto...>
     using systems = parse_system_list<extract_systems_t<Desc>>;
