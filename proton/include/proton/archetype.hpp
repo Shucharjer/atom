@@ -114,6 +114,9 @@ public:
     constexpr archetype(
         HashRng&& hrange, MetaRng&& mrange, const Al& alloc = {});
 
+    template <component... Components, typename Al = Alloc>
+    constexpr archetype(const Al& alloc = {});
+
     auto begin() {}
 
     auto end();
