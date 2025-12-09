@@ -1,9 +1,11 @@
 #pragma once
 #include <atomic>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <new>
+#include <type_traits>
 #include <vector>
 #include "neutron/shift_map.hpp"
 #include "proton.hpp"
@@ -12,6 +14,136 @@
 
 namespace proton {
 
+/*! @cond TURN_OFF_DOXYGEN */
+namespace _command_buffer {
+
+class _command_buffer_base;
+
+template <typename CommandBuffer>
+concept command_buffer =
+    std::derived_from<
+        std::remove_cvref_t<CommandBuffer>, _command_buffer_base> &&
+    requires(std::remove_cvref_t<CommandBuffer>& command_buffer) {
+        command_buffer.grow();
+    };
+
+struct command {
+    enum class type : uint8_t {
+        spawn,
+        attach,
+        add,
+        detach,
+        remove,
+        kill
+    };
+    uint8_t count;
+    uint16_t size;
+};
+
+struct _command_buffer_context {
+    command* commands{};
+    size_t command_size{};
+    size_t command_capcity{};
+    std::byte* buffer{};
+    size_t buffer_size{};
+    size_t buffer_capacity{};
+};
+
+class alignas(std::hardware_destructive_interference_size)
+    _command_buffer_base {
+
+    using grow_fn = _command_buffer_context (*)(_command_buffer_base*);
+
+public:
+    template <command_buffer CommandBuffer>
+    constexpr _command_buffer_base(
+        [[maybe_unused]] CommandBuffer* command_buffer) noexcept
+        : grow_([](_command_buffer_base* self) -> _command_buffer_context {
+              static_cast<std::remove_cvref_t<CommandBuffer>*>(self)->_grow();
+          }) {}
+
+    _command_buffer_base(const _command_buffer_base&)            = delete;
+    _command_buffer_base& operator=(const _command_buffer_base&) = delete;
+
+    constexpr _command_buffer_base(_command_buffer_base&&) noexcept = default;
+    constexpr _command_buffer_base&
+        operator=(_command_buffer_base&&) noexcept = default;
+
+    constexpr ~_command_buffer_base() noexcept = default;
+
+    constexpr void reset() noexcept {
+        inframe_index_        = 0;
+        context_.command_size = 0;
+        context_.buffer_size  = 0;
+    }
+
+    future_entity_t spawn() noexcept {
+        const future_entity_t entity{ inframe_index_++ };
+        // emplace command spawn
+        return entity;
+    }
+
+    template <component... Components>
+    future_entity_t spawn() noexcept {
+        const future_entity_t entity{ inframe_index_++ };
+        // emplace command spawn & command add
+        return entity;
+    }
+
+    template <component... Components>
+    future_entity_t spawn(Components&&... components) noexcept {
+        const future_entity_t entity{ inframe_index_++ };
+        // emplace command spawn & command add
+        return entity;
+    }
+
+    template <component... Components>
+    void add_components(future_entity_t entity) {
+        // emplace command add
+    }
+
+    template <component... Components>
+    void add_components(entity_t entity) {
+        // emplace command attach
+    }
+
+    template <component... Components>
+    void add_components(future_entity_t entity, Components&&... components) {
+        // emplace command add
+    }
+
+    template <component... Components>
+    void add_components(entity_t entity, Components&&... components) {
+        // emplace command attach
+    }
+
+    template <component... Components>
+    void remove_components(future_entity_t entity) {
+        // emplace command remove
+    }
+
+    template <component... Components>
+    void remove_components(entity_t entity) {
+        // emplace command detach
+    }
+
+    void kill(future_entity_t entity) {
+        // emplace command kill
+    }
+
+    void kill(entity_t entity) {
+        // emplace command kill
+    }
+
+private:
+    index_t inframe_index_{};
+    _command_buffer_context context_;
+    grow_fn grow_;
+};
+
+} // namespace _command_buffer
+/*! @endcond */
+
 /**
  * @class command_buffer
  * @brief A buffer stores commands in a single thread.
@@ -19,74 +151,23 @@ namespace proton {
  * @tparam Alloc
  */
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
-class alignas(std::hardware_destructive_interference_size) command_buffer {
+class alignas(std::hardware_destructive_interference_size) command_buffer :
+    _command_buffer::_command_buffer_base {
+    using _base_type = _command_buffer::_command_buffer_base;
+
     template <typename Ty>
     using _rebind_alloc_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
+    friend class _command_buffer::_command_buffer_base;
+
 public:
-    inline static thread_local command_buffer* buffer = nullptr;
-
-    constexpr void reset() {
-        inframe_index_ = 0;
-        commands_.clear();
-    }
-
-    constexpr future_entity_t spawn() {
-        auto curr = inframe_index_++;
-        // put to buf
-        return future_entity_t{ curr };
-    }
-
-    template <typename... Components>
-    constexpr void add_components(entity_t entity) {
-        //
-    }
-
-    template <typename... Components>
-    constexpr void add_components(future_entity_t entity) {
-        //
-    }
-
-    template <typename... Components>
-    constexpr void add_components(entity_t, Components&&... components) {
-        //
-    }
-
-    template <typename... Components>
-    constexpr void add_components(future_entity_t, Components&&... components) {
-        //
-    }
-
-    template <typename... Components>
-    constexpr void remove_components() {
-        //
-    }
-
-    constexpr void kill(entity_t entity) {
-        //
-    }
-
-    constexpr void kill(future_entity_t entity) {
-        //
-    }
-
-    NODISCARD const auto& get() const noexcept { return commands_; }
+    template <typename Al = Alloc>
+    constexpr command_buffer(const Al& alloc = {}) : _base_type(this) {}
 
 private:
-    enum class command : uint8_t {
-        spawn  = 0,
-        add    = 1,
-        remove = 2,
-        kill   = 3
-    };
-    struct alignas(64) command_block {
-        void (*command)();
-    };
-
-    std::vector<command_block, _rebind_alloc_t<command_block>> commands_;
-    std::vector<std::byte, _rebind_alloc_t<std::byte>> buffer_;
-
-    index_t inframe_index_;
+    _command_buffer::_command_buffer_context _grow() {
+        //
+    }
 };
 
 } // namespace proton
