@@ -19,14 +19,6 @@ namespace _command_buffer {
 
 class _command_buffer_base;
 
-template <typename CommandBuffer>
-concept command_buffer =
-    std::derived_from<
-        std::remove_cvref_t<CommandBuffer>, _command_buffer_base> &&
-    requires(std::remove_cvref_t<CommandBuffer>& command_buffer) {
-        command_buffer.grow();
-    };
-
 struct command {
     enum class type : uint8_t {
         spawn,
@@ -55,11 +47,14 @@ class alignas(std::hardware_destructive_interference_size)
     using grow_fn = _command_buffer_context (*)(_command_buffer_base*);
 
 public:
-    template <command_buffer CommandBuffer>
+    template <typename CommandBuffer>
+    requires std::derived_from<
+        std::remove_cvref_t<CommandBuffer>, _command_buffer_base>
     constexpr _command_buffer_base(
         [[maybe_unused]] CommandBuffer* command_buffer) noexcept
         : grow_([](_command_buffer_base* self) -> _command_buffer_context {
-              static_cast<std::remove_cvref_t<CommandBuffer>*>(self)->_grow();
+              return static_cast<std::remove_cvref_t<CommandBuffer>*>(self)
+                  ->_grow();
           }) {}
 
     _command_buffer_base(const _command_buffer_base&)            = delete;
@@ -136,6 +131,17 @@ public:
     }
 
 private:
+    void _emplace_command(command cmd, void* payload) {
+        if (context_.command_size == context_.command_capcity ||
+            context_.buffer_size + cmd.size > context_.buffer_capacity)
+            [[unlikely]] {
+            context_ = grow_(this);
+        }
+
+        context_.commands[context_.command_size++] = cmd;
+        // copy payload
+    }
+
     index_t inframe_index_{};
     _command_buffer_context context_;
     grow_fn grow_;
@@ -152,7 +158,7 @@ private:
  */
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
 class alignas(std::hardware_destructive_interference_size) command_buffer :
-    _command_buffer::_command_buffer_base {
+    public _command_buffer::_command_buffer_base {
     using _base_type = _command_buffer::_command_buffer_base;
 
     template <typename Ty>

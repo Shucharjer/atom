@@ -95,6 +95,13 @@ public:
 
     auto get();
 
+    template <component Component>
+    auto get();
+
+    template <component... Components>
+    requires(sizeof...(Components) > 1)
+    auto get();
+
     auto get_with_entity();
 
 private:

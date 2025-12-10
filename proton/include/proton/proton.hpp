@@ -1,5 +1,6 @@
 #pragma once
 #include <concepts>
+#include <format>
 #include <memory>
 #include <type_traits>
 #include <vector>
@@ -233,3 +234,18 @@ class query {
 };
 
 } // namespace proton
+
+namespace std {
+
+template <typename CharT>
+struct formatter<proton::future_entity_t, CharT> {
+    std::formatter<proton::entity_t, CharT> underlying;
+    constexpr auto parse(auto& ctx) { return underlying.parse(ctx); }
+    template <typename FormatContext>
+    constexpr auto
+        format(const proton::future_entity_t entity, FormatContext& ctx) const {
+        return underlying.format(entity.get(), ctx);
+    }
+};
+
+} // namespace std

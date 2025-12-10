@@ -85,6 +85,7 @@ void echo_entities(query<with<const name&, health>>);
 void movement(
     res<const input<keyboard>&, const timer&>, query<with<transform&, player>>);
 void update_position(query<with<position&, direction>>);
+void echo_position(query<with<position>> qry);
 void render_objs(
     query<with<const transform&, sprite>>, local<sprite_manager>,
     res<const timer&>);
@@ -98,6 +99,7 @@ constexpr auto world = world_desc
     | add_system<startup, create_entities>
     | add_system<pre_update, movement>
     | add_system<update, update_position>
+    | add_system<post_update, echo_position>
     | add_system<render, render_objs>
     | add_system<post_update, modify_game_state>
     | add_system<post_update, echo_entities, after<modify_game_state>>
@@ -141,6 +143,11 @@ void update_position(query<with<position&, direction>> qry) {
     // for (auto [pos, dir] : qry.get()) {
     //     pos.x += update_x[dir];
     //     pos.y += update_y[dir];
+    // }
+}
+void echo_position(query<with<position>> qry) {
+    // for (auto pos : qry.get<position>()) {
+    //     neutron::println("{}", pos);
     // }
 }
 void render_objs(

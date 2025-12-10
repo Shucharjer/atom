@@ -1,28 +1,30 @@
 #pragma once
 #include <algorithm>
 #include <cassert>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <new>
 #include <ranges>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <neutron/auxiliary.hpp>
+#include <neutron/concepts.hpp>
 #include <neutron/ranges.hpp>
-#include "neutron/auxiliary.hpp"
-#include "neutron/shift_map.hpp"
-#include "neutron/type_hash.hpp"
+#include <neutron/shift_map.hpp>
+#include <neutron/type_hash.hpp>
 #include "proton/proton.hpp"
 
 namespace proton {
 
 struct metatype {
-    uint64_t trivially_relocatible : 1;
-    uint64_t _reserve : 15;
+    uint64_t trivially_copyable : 1;
+    uint64_t trivially_relocatable : 1;
+    uint64_t _reserve : 14;
     uint64_t align : 16;
     uint64_t size : 32;
 
@@ -31,13 +33,15 @@ struct metatype {
 
     template <typename Ty>
     consteval static metatype make() noexcept {
-        return metatype{ .trivially_copyable = std::is_trivially_copyable_v<Ty>,
-                         ._reserve           = 0,
-                         .lign      = std::is_empty_v<Ty> ? 0 : alignof(Ty),
-                         .size      = std::is_empty_v<Ty> ? 0 : sizeof(Ty),
-                         .construct = [](void* ptr) { ::new (ptr) Ty{}; },
-                         .destroy =
-                             [](void* ptr) { static_cast<Ty*>(ptr)->~Ty(); } };
+        return metatype{
+            .trivially_copyable    = std::is_trivially_copyable_v<Ty>,
+            .trivially_relocatable = neutron::trivially_relocatable<Ty>,
+            ._reserve              = 0,
+            .lign                  = std::is_empty_v<Ty> ? 0 : alignof(Ty),
+            .size                  = std::is_empty_v<Ty> ? 0 : sizeof(Ty),
+            .construct             = [](void* ptr) { ::new (ptr) Ty{}; },
+            .destroy = [](void* ptr) { static_cast<Ty*>(ptr)->~Ty(); }
+        };
     }
 };
 
@@ -46,25 +50,22 @@ consteval auto make_types() noexcept {
     return std::array{ metatype::make<Tys>()... };
 }
 
-template <typename Alloc = std::allocator<std::byte>>
-struct hive_access {
-
-    template <typename Ty>
-    consteval static hive_access make() noexcept {
-        return hive_access<Alloc>{};
-    }
-};
-
-template <typename... Ty>
-consteval auto make_accesses() noexcept {}
-
 template <_std_simple_allocator Alloc>
 class archetype {
     template <typename Ty>
     using _allocator_t = rebind_alloc_t<Alloc, Ty>;
 
+    template <typename Ty>
+    using _vector_t = std::vector<Ty, _allocator_t<Ty>>;
+
+    template <
+        typename Kty, typename Ty, typename Hash = std::hash<Kty>,
+        typename Pred = std::equal_to<Kty>>
+    using _unordered_map_t = std::unordered_map<
+        Kty, Ty, Hash, Pred, _allocator_t<std::pair<const Kty, Ty>>>;
+
 public:
-    using _hash_type       = uint64_t;
+    using _hash_type       = uint32_t;
     using _metatype        = metatype;
     using allocator_type   = _allocator_t<metatype>;
     using allocator_traits = std::allocator_traits<allocator_type>;
@@ -132,14 +133,24 @@ public:
         }
     }
 
-    entity_t spawn() {
-        //
+    template <component... Components>
+    NODISCARD auto emplace(entity_t entity) {
+        constexpr uint64_t combined_hash =
+            neutron::make_array_hash<neutron::type_list<Components...>>();
+        assert(combined_hash == hash_);
+
+        const index_t index = size_;
+        for (index_t i = 0; i < hash_list_.size(); ++i) {
+            const auto hash      = hash_list_[i];
+            const metatype& meta = metatypes_[i];
+            // construct data
+            static_assert(false);
+        }
         ++size_;
     }
 
-    void kill(entity_t entity) {
-        //
-        --size_;
+    void erase(index_t index) {
+        static_assert(false);
     }
 
     NODISCARD constexpr size_type kinds() const noexcept {
@@ -166,9 +177,13 @@ private:
         }
     }
 
-    std::vector<_hash_type, _allocator_t<_hash_type>> hash_list_;
-    std::vector<_metatype, _allocator_t<_metatype>> metatypes_;
+    _vector_t<_hash_type> hash_list_;
+    _vector_t<_metatype> metatypes_;
     size_t size_{};
+    uint64_t hash_{};
+    neutron::shift_map<
+        entity_t, index_t, 32UL, neutron::half_bits<entity_t>, Alloc>
+        mapping_;
 };
 
 template <_std_simple_allocator Alloc>
