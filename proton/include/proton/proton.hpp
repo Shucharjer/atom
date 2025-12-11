@@ -84,11 +84,12 @@ template <typename Ty>
 constexpr bool as_component = false;
 
 template <typename Ty>
-concept component = requires {
-    typename std::remove_cvref_t<Ty>::component_concept;
-    requires std::derived_from<
-        typename std::remove_cvref_t<Ty>::component_concept, component_t>;
-} || as_component<std::remove_cvref_t<Ty>>;
+concept component =
+    (requires {
+        typename std::remove_cvref_t<Ty>::component_concept;
+        requires std::derived_from<
+            typename std::remove_cvref_t<Ty>::component_concept, component_t>;
+    } || as_component<std::remove_cvref_t<Ty>>) && std::destructible<Ty>;
 
 /*! @cond TURN_OFF_DOXYGEN */
 namespace internal {

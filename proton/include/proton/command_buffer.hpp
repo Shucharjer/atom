@@ -172,7 +172,7 @@ public:
 
 private:
     _command_buffer::_command_buffer_context _grow() {
-        //
+        return _command_buffer::_command_buffer_context{};
     }
 };
 

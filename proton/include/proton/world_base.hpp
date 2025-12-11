@@ -26,8 +26,6 @@ class world_base {
     template <typename Ty>
     using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
-    using archetype = archetype<Alloc>;
-
     template <typename Ty>
     using _vector_t = std::vector<Ty, _allocator_t<Ty>>;
 
@@ -41,6 +39,8 @@ class world_base {
     using _priority_queue = std::priority_queue<Ty, _vector_t<Ty>>;
 
 public:
+    using archetype = archetype<Alloc>;
+
     template <typename Al = Alloc>
     constexpr explicit world_base(const Al& alloc = Alloc{})
         : archetypes_(alloc), entities_(alloc) {}
@@ -108,6 +108,10 @@ constexpr entity_t world_base<Alloc>::spawn() {
 }
 
 template <_std_simple_allocator Alloc>
+template <typename...Components>
+constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity){}
+
+template <_std_simple_allocator Alloc>
 template <component... Components>
 constexpr entity_t world_base<Alloc>::spawn() {
     constexpr uint64_t hash =
@@ -170,7 +174,7 @@ template <_std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::kill(entity_t entity) {
     auto* arche = entities_.at(entity);
     if (arche != nullptr) {
-        arche->kill(entity);
+        arche->erase(entity);
     }
     entities_.erase(entity);
     free_indices_.push(_get_index(entity));
