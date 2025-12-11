@@ -14,13 +14,14 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <neutron/algorithm.hpp>
 #include <neutron/concepts.hpp>
 #include <neutron/dense_map.hpp>
 #include <neutron/ranges.hpp>
 #include <neutron/shift_map.hpp>
+#include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
 #include <neutron/utility.hpp>
-#include "neutron/template_list.hpp"
 #include "proton.hpp"
 #include "proton/proton.hpp"
 
@@ -48,10 +49,15 @@ consteval auto make_info() noexcept {
     return std::array{ basic_info::make<Tys>()... };
 }
 
+template <typename... Tys>
+consteval auto make_info(neutron::type_list<Tys...>) noexcept {
+    return std::array{ basic_info::make<Tys>()... };
+}
+
 template <component... Comp>
-struct _add_components {};
+struct add_components_t {};
 template <component... Comp>
-struct _remove_components {};
+struct remove_components_t {};
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
@@ -66,12 +72,13 @@ struct _buffer_deletor {
 
 using _buffer_ptr = std::unique_ptr<std::byte[], _buffer_deletor>;
 
-template <component... Comp>
+template <component... Components>
 class view {
 public:
-    using value_type   = std::tuple<Comp...>;
-    using size_type    = size_t;
-    using _sorted_list = neutron::type_list<Comp...>;
+    using value_type      = std::tuple<Components...>;
+    using size_type       = size_t;
+    using difference_type = ptrdiff_t;
+    using _sorted_list    = neutron::type_list<Components...>;
 
     template <typename Archetype>
     constexpr view(Archetype& arche) noexcept
@@ -79,7 +86,7 @@ public:
 
     class iterator {
     public:
-        using value_type      = std::tuple<Comp...>;
+        using value_type      = std::tuple<Components...>;
         using difference_type = ptrdiff_t;
 
         auto operator*() {}
@@ -101,7 +108,7 @@ public:
 
 private:
     size_type size_;
-    std::array<std::byte*, sizeof...(Comp)> storage_;
+    std::array<std::byte*, sizeof...(Components)> storage_;
 };
 
 template <_std_simple_allocator Alloc>
@@ -128,48 +135,69 @@ public:
     using size_type        = size_t;
     using difference_type  = ptrdiff_t;
 
-    template <
-        neutron::compatible_range<_hash_type> HashRng,
-        neutron::compatible_range<basic_info> InfoRng, typename Al = Alloc>
-    requires(std::ranges::sized_range<HashRng> ||
-             std::ranges::sized_range<InfoRng>)
-    constexpr archetype(
-        HashRng&& hrange, InfoRng&& irange, const Al& alloc = {})
-        : hash_list_(_preset_size(hrange, irange), alloc),
-          basic_info_(_preset_size(hrange, irange), alloc) {
-        if constexpr (std::ranges::contiguous_range<HashRng>) {
-            std::memcpy(
-                hash_list_.data(), std::ranges::data(hrange),
-                sizeof(_hash_type) * hash_list_.size());
-        } else {
-            std::ranges::copy(hrange, hash_list_.begin());
-        }
-
-        if constexpr (std::ranges::contiguous_range<InfoRng>) {
-            std::memcpy(
-                basic_info_.data(), std::ranges::data(irange),
-                sizeof(basic_info) * basic_info_.size());
-        } else {
-            std::ranges::copy(irange, basic_info_.begin());
-        }
-    }
-
-    template <
-        neutron::compatible_range<_hash_type> HashRng,
-        neutron::compatible_range<basic_info> InfoRng, typename Al = Alloc>
-    requires(
-        !std::ranges::sized_range<HashRng> &&
-        !std::ranges::sized_range<InfoRng>)
-    constexpr archetype(
-        HashRng&& hrange, InfoRng&& irange, const Al& alloc = {});
-
     template <component... Components, typename Al = Alloc>
     requires(sizeof...(Components) != 0)
     constexpr archetype(
         neutron::type_spreader<Components...>, const Al& alloc = {})
         : archetype(
               neutron::make_hash_array<neutron::type_list<Components...>>(),
-              make_info<neutron::type_list<Components...>>(), alloc) {}
+              make_info(
+                  neutron::sorted_type_t<neutron::sorted_list_t<
+                      neutron::type_list<Components...>>>{}),
+              alloc) {}
+
+    template <
+        neutron::compatible_range<_hash_type> HashRng,
+        neutron::compatible_range<basic_info> InfoRng, typename Al = Alloc>
+    constexpr archetype(
+        HashRng&& hrange, InfoRng&& irange, const Al& alloc = {})
+        : hash_list_(
+              std::ranges::begin(hrange), std::ranges::end(hrange), alloc),
+          basic_info_(
+              std::ranges::begin(irange), std::ranges::end(irange), alloc),
+          hash_(neutron::hash_combine(hash_list_)) {}
+
+    template <
+        neutron::compatible_range<_hash_type> HashRng,
+        neutron::compatible_range<basic_info> InfoRng, typename... Components,
+        typename Al = Alloc>
+    constexpr archetype(
+        HashRng&& hrange, InfoRng&& irange, add_components_t<Components...>,
+        const Al& alloc = {})
+        : hash_list_(
+              std::ranges::begin(hrange), std::ranges::end(hrange), alloc),
+          basic_info_(
+              std::ranges::begin(irange), std::ranges::end(irange), alloc) {
+        using type_list          = neutron::type_list<Components...>;
+        constexpr auto hash_list = neutron::make_hash_array<type_list>();
+
+        // TODO: append info, constructors, move constructors, destructors
+        static_assert(false);
+#if HAS_CXX23
+        hash_list_.append_range(hash_list);
+#else
+        hash_list_.insert(hash_list_.end(), hash_list.begin(), hash_list.end());
+#endif
+        neutron::inplace_merge(
+            hash_list_, hash_list_.end() - hash_list.size(), basic_info_,
+            constructors_, move_constructors_, destructors_);
+    }
+
+    template <
+        neutron::compatible_range<_hash_type> HashRng,
+        neutron::compatible_range<basic_info> InfoRng, typename... Components,
+        typename Al = Alloc>
+    constexpr archetype(
+        HashRng&& hrange, InfoRng&& irange, remove_components_t<Components...>,
+        const Al& alloc = {})
+        : hash_list_(
+              std::ranges::begin(hrange), std::ranges::end(hrange), alloc),
+          basic_info_(
+              std::ranges::begin(irange), std::ranges::end(irange), alloc) {
+        // TODO: remove hash, info, constructors, move constructors and
+        // destructors and sort them
+        static_assert(false);
+    }
 
     template <typename... Args>
     NODISCARD bool has() const noexcept {
@@ -226,6 +254,10 @@ public:
 
     NODISCARD constexpr size_type capacity() const noexcept {
         return capacity_;
+    }
+
+    NODISCARD constexpr decltype(auto) hash_list() const noexcept {
+        return hash_list_;
     }
 
 private:
@@ -386,25 +418,8 @@ private:
     _vector_t<entity_t> index2entity_;
 };
 
-template <_std_simple_allocator Alloc>
-template <
-    neutron::compatible_range<typename archetype<Alloc>::_hash_type> HashRng,
-    neutron::compatible_range<basic_info> InfoRng, typename Al>
-requires(!std::ranges::sized_range<HashRng> &&
-         !std::ranges::sized_range<InfoRng>)
-constexpr archetype<Alloc>::archetype(
-    HashRng&& hrange, InfoRng&& irange, const Al& alloc)
-#if HAS_CXX23
-    : hash_list_(std::from_range, std::forward<HashRng>(hrange), alloc),
-      metatypes_(std::from_range, std::forward<InfoRng>(mrange), alloc){}
-#else
-    : hash_list_(hrange.begin(), hrange.end(), alloc),
-      basic_info_(irange.begin(), irange.end(), alloc) {
-}
-#endif
-
-// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-// NOLINTEND(cppcoreguidelines-avoid-c-arrays)
 // NOLINTEND(modernize-avoid-c-arrays)
+// NOLINTEND(cppcoreguidelines-avoid-c-arrays)
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
 } // namespace proton
