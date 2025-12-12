@@ -4,14 +4,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <iterator>
 #include <memory>
 #include <new>
-#include <ranges>
 #include <tuple>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <neutron/algorithm.hpp>
@@ -26,74 +23,37 @@
 #include "proton.hpp"
 #include "proton/proton.hpp"
 
-#include <neutron/print.hpp>
-
 namespace proton {
 
-struct basic_info {
-    uint64_t trivially_copyable : 1;
-    uint64_t trivially_relocatable : 1;
-    uint64_t _reserve : 14;
-    uint64_t align : 16;
-    uint64_t size : 32;
-
-    template <typename Ty>
-    consteval static basic_info make() noexcept {
-        return { .trivially_copyable    = std::is_trivially_copyable_v<Ty>,
-                 .trivially_relocatable = neutron::trivially_relocatable<Ty>,
-                 ._reserve              = 0,
-                 .align                 = std::is_empty_v<Ty> ? 0 : alignof(Ty),
-                 .size = std::is_empty_v<Ty> ? 0 : sizeof(Ty) };
-    }
-};
-
-template <typename... Tys>
-consteval auto make_info(neutron::type_list<Tys...>) noexcept {
-    return std::array{ basic_info::make<Tys>()... };
-}
-
-template <typename... Tys>
-consteval auto make_info() noexcept {
-    return make_info(
-        neutron::sorted_type_t<
-            neutron::sorted_list_t<neutron::type_list<Tys...>>>{});
-}
-
-template <component... Comp>
-struct add_components_t {};
-template <component... Comp>
-struct remove_components_t {};
-
-// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
-// NOLINTBEGIN(modernize-avoid-c-arrays)
-
-struct _buffer_deletor {
-    std::align_val_t align;
-    constexpr void operator()(std::byte* ptr) const noexcept {
-        ::operator delete(ptr, align);
-    }
-};
-
-using _buffer_ptr = std::unique_ptr<std::byte[], _buffer_deletor>;
-
 template <component... Components>
-class sorted_view {
+class view {
 public:
     using value_type      = std::tuple<Components...>;
     using size_type       = size_t;
     using difference_type = ptrdiff_t;
-    using _sorted_list    = neutron::type_list<Components...>;
+    using _type_list = neutron::type_list<std::remove_cvref_t<Components>...>;
+    using _sorted_list =
+        neutron::sorted_type_t<neutron::sorted_list_t<_type_list>>;
+
+    static constexpr auto indices = neutron::sort_index<_type_list>();
+
+    static_assert(
+        sizeof...(Components) > 0,
+        "the view of components should contains at least one component");
 
     template <typename Archetype>
-    sorted_view(Archetype& arche) noexcept
-        : size_(arche.size()),
-          storage_{ reinterpret_cast<std::remove_cvref_t<Components>*>(
-              arche.template get<std::remove_cvref_t<Components>>()
-                  .first)... } {}
+    view(Archetype& arche) noexcept : size_(arche.size()) {
+        std::array storage = arche.template get<Components...>();
+        [this, &storage]<size_t... Is>(std::index_sequence<Is...>) {
+            ((std::get<Is>(storage_) =
+                  reinterpret_cast<std::remove_cvref_t<Components>*>(
+                      storage[Is])),
+             ...);
+        }(std::index_sequence_for<Components...>());
+    }
 
     class iterator {
-        friend class sorted_view;
+        friend class view<Components...>;
 
         constexpr iterator(
             const std::tuple<std::remove_cvref_t<Components>*...>&
@@ -102,6 +62,7 @@ public:
 
     public:
         using value_type      = std::tuple<Components...>;
+        using size_type       = size_t;
         using difference_type = ptrdiff_t;
 
         constexpr iterator(const iterator& that) noexcept            = default;
@@ -110,7 +71,7 @@ public:
         constexpr iterator& operator=(iterator&& that) noexcept      = default;
         constexpr ~iterator() noexcept                               = default;
 
-        constexpr auto operator*() noexcept -> std::tuple<Components...> {
+        constexpr auto operator*() noexcept -> value_type {
             return std::apply(
                 [](auto*... ptrs) {
                     return std::tuple<Components...>((*ptrs)...);
@@ -167,70 +128,128 @@ public:
             return temp;
         }
 
+        constexpr std::strong_ordering
+            operator<=>(const iterator& that) const noexcept {
+            return storage_ <=> that.storage_;
+        }
+
+        constexpr bool operator!=(const iterator& that) const noexcept {
+            return storage_ != that.storage_;
+        }
+
     private:
         std::tuple<std::remove_cvref_t<Components>*...> storage_;
     };
 
-    auto begin() noexcept { return iterator{ storage_ }; }
-    auto end() noexcept { return iterator{ storage_ } + size_; }
-    auto size() const noexcept { return size_; }
-    auto empty() const noexcept { return size_ == 0; }
+    constexpr auto begin() noexcept { return iterator{ storage_ }; }
+    constexpr auto end() noexcept { return iterator{ storage_ } + size_; }
+    constexpr auto rbegin() noexcept {
+        return std::make_reverse_iterator(iterator{ storage_ } + size_);
+    }
+    constexpr auto rend() noexcept {
+        return std::make_reverse_iterator(iterator{ storage_ });
+    }
+    constexpr auto size() const noexcept { return size_; }
+    constexpr auto empty() const noexcept { return size_ == 0; }
 
 private:
     size_type size_;
     std::tuple<std::remove_cvref_t<Components>*...> storage_;
 };
 
-namespace _view {
+/**
+ * @brief Compile-time metadata descriptor for a component type.
+ *
+ * This structure encapsulates essential compile-time properties of a type, such
+ * as trivial copyability, relocatability, alignment, and size. It is primarily
+ * used by the `archetype` to manage heterogeneous component storage.
+ */
+struct basic_info {
+    uint64_t trivially_copyable : 1;
+    uint64_t trivially_relocatable : 1;
+    uint64_t _reserve : 14;
+    uint64_t align : 16;
+    uint64_t size : 32;
 
-template <typename, bool = false>
-struct sorted;
-template <template <typename...> typename Template, typename... Tys>
-struct sorted<Template<Tys...>, true> {
-    using type = sorted_view<Tys...>;
-};
-template <typename TypeList>
-struct sorted<TypeList, false> {
-    using type = sorted<
-        neutron::sorted_type_t<neutron::sorted_list_t<TypeList>>, true>::type;
-};
-
-} // namespace _view
-
-template <component... Components>
-class view : private _view::sorted<neutron::type_list<Components...>>::type {
-    static constexpr auto indices =
-        neutron::sort_index<neutron::type_list<Components...>>();
-
-public:
-    using value_type      = std::tuple<Components...>;
-    using size_type       = size_t;
-    using difference_type = ptrdiff_t;
-    using _sorted_list    = neutron::type_list<Components...>;
-
-    class iterator {
-    public:
-        using value_type      = std::tuple<Components...>;
-        using difference_type = ptrdiff_t;
-
-        auto operator*() {}
-        auto operator++() {}
-        auto operator++(int) {}
-        auto operator+=(ptrdiff_t) {}
-        auto operator+(ptrdiff_t) {}
-        auto operator--() {}
-        auto operator--(int) {}
-        auto operator-=(ptrdiff_t) {}
-        auto operator-(ptrdiff_t) {}
-
-    private:
-        size_type size_;
-    };
-
-    auto begin() noexcept {}
-    auto end() noexcept {}
+    /**
+     * @brief Constructs a `basic_info` instance for type `Ty` at compile time.
+     * @tparam Ty The type to introspect.
+     * @return A `consteval`-computed `basic_info` object describing `Ty`.
+     */
+    template <typename Ty>
+    consteval static basic_info make() noexcept {
+        return { .trivially_copyable    = std::is_trivially_copyable_v<Ty>,
+                 .trivially_relocatable = neutron::trivially_relocatable<Ty>,
+                 ._reserve              = 0,
+                 .align                 = std::is_empty_v<Ty> ? 0 : alignof(Ty),
+                 .size = std::is_empty_v<Ty> ? 0 : sizeof(Ty) };
+    }
 };
 
+/**
+ * @brief Generates an array of @ref basic_info objects from a type list.
+ * @tparam Tys Parameter pack of component types.
+ * @param[in] list A `type_list<Tys...>` instance (used only for deduction).
+ * @return A compile-time `std::array<basic_info, sizeof...(Tys)>`.
+ */
+template <typename... Tys>
+consteval auto make_info(neutron::type_list<Tys...>) noexcept {
+    return std::array{ basic_info::make<Tys>()... };
+}
+
+/**
+ * @brief Convenience overload that sorts the input types before generating
+ * metadata.
+
+ * Sorting ensures deterministic layout and hash computation across translation
+ * units.
+ * @tparam Tys Unsorted component types.
+ * @return A compile-time array of sorted `basic_info` descriptors.
+ */
+template <typename... Tys>
+consteval auto make_info() noexcept {
+    return make_info(
+        neutron::sorted_type_t<
+            neutron::sorted_list_t<neutron::type_list<Tys...>>>{});
+}
+
+template <component... Comp>
+struct add_components_t {};
+template <component... Comp>
+struct remove_components_t {};
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
+// NOLINTBEGIN(modernize-avoid-c-arrays)
+
+/**
+ * @brief Custom deleter for aligned memory allocated via `operator new(size,
+ * align_val_t)`.
+ */
+struct _buffer_deletor {
+    std::align_val_t align;
+
+    /**
+     * @brief Deallocates memory with the stored alignment.
+     * @param ptr Pointer to deallocate.
+     */
+    constexpr void operator()(std::byte* ptr) const noexcept {
+        ::operator delete(ptr, align);
+    }
+};
+
+/// Alias for a unique pointer managing aligned byte buffers.
+using _buffer_ptr = std::unique_ptr<std::byte[], _buffer_deletor>;
+
+/**
+ * @brief Represents a homogeneous collection of entities sharing the same set
+ * of components.
+
+ * An archetype stores components in Structure-of-Arrays (SoA) layout. Each
+ * component type has its own contiguous buffer, enabling efficient iteration
+ * and cache-friendly access.
+ * @tparam Alloc Allocator type conforming to `_std_simple_allocator` concept.
+ */
 template <_std_simple_allocator Alloc>
 class archetype {
     template <component... Comp>
@@ -242,23 +261,30 @@ class archetype {
     template <typename Ty>
     using _vector_t = std::vector<Ty, _allocator_t<Ty>>;
 
-    template <
-        typename Kty, typename Ty, typename Hash = std::hash<Kty>,
-        typename Pred = std::equal_to<Kty>>
-    using _unordered_map_t = std::unordered_map<
-        Kty, Ty, Hash, Pred, _allocator_t<std::pair<const Kty, Ty>>>;
+    static constexpr size_t default_alignment = 32;
+    static constexpr size_t initial_capacity  = 64;
 
 public:
     using _hash_type       = uint32_t;
     using _hash_vector     = _vector_t<_hash_type>;
     using _ctor_fn         = void (*)(void*);
     using _mov_ctor_fn     = void (*)(void*, void*);
+    using _mov_assign_fn   = void (*)(void*, void*);
     using _dtor_fn         = void (*)(void*);
     using allocator_type   = _allocator_t<std::byte>;
     using allocator_traits = std::allocator_traits<allocator_type>;
     using size_type        = size_t;
     using difference_type  = ptrdiff_t;
 
+    /**
+     * @brief Constructs an archetype from a list of component types.
+     *
+     * The component list is automatically sorted to ensure consistent layout.
+     * @tparam Components Component types to store in this archetype.
+     * @param[in] tag     Tag type `neutron::immediately_t` for disambiguation.
+     * @param[in] list    Type list of components.
+     * @param[in] alloc   Allocator instance.
+     */
     template <component... Components, typename Al = Alloc>
     requires(sizeof...(Components) != 0)
     CONSTEXPR23 archetype(
@@ -286,6 +312,15 @@ public:
                   }
               }... },
               alloc),
+          move_assignments_(
+              { [](void* dst, void* src) noexcept(
+                    std::is_nothrow_move_assignable_v<Components>) {
+                  if constexpr (!std::is_empty_v<Components>) {
+                      (*static_cast<Components*>(dst) =
+                           std::move(*static_cast<Components*>(src)));
+                  }
+              }... },
+              alloc),
           destructors_(
               { [](void* ptr) noexcept {
                   if constexpr (!std::is_empty_v<Components>) {
@@ -293,7 +328,7 @@ public:
                   }
               }... },
               alloc),
-          storage_(sizeof...(Components), alloc), capacity_(64),
+          storage_(sizeof...(Components), alloc), capacity_(initial_capacity),
           hash_(neutron::make_array_hash<neutron::type_list<Components...>>()) {
         using namespace neutron;
         [this]<size_t... Is>(std::index_sequence<Is...>) {
@@ -301,6 +336,11 @@ public:
         }(std::index_sequence_for<Components...>());
     }
 
+    /**
+     * @brief Convenience constructor accepting a `type_spreader`.
+     *
+     * Internally sorts the component types before delegation.
+     */
     template <component... Components, typename Al = Alloc>
     requires(sizeof...(Components) != 0)
     constexpr archetype(
@@ -311,61 +351,146 @@ public:
                   neutron::sorted_list_t<neutron::type_list<Components...>>>{},
               alloc) {}
 
-    template <
-        neutron::compatible_range<_hash_type> HashRng,
-        neutron::compatible_range<basic_info> InfoRng, typename Al = Alloc>
-    constexpr archetype(
-        HashRng&& hrange, InfoRng&& irange, const Al& alloc = {})
-        : hash_list_(
-              std::ranges::begin(hrange), std::ranges::end(hrange), alloc),
-          basic_info_(
-              std::ranges::begin(irange), std::ranges::end(irange), alloc),
-          hash_(neutron::hash_combine(hash_list_)) {}
+    template <component... Components>
+    archetype(const archetype& archetype, add_components_t<Components...>)
+        : hash_list_(archetype.get_allocator()),
+          basic_info_(archetype.get_allocator()),
+          constructors_(archetype.get_allocator()),
+          move_constructors_(archetype.get_allocator()),
+          move_assignments_(archetype.get_allocator()),
+          destructors_(archetype.get_allocator()),
+          storage_(archetype.get_allocator()),
+          entity2index_(archetype.get_allocator()),
+          index2entity_(archetype.get_allocator()) {
+        using namespace neutron;
+        using sorted_list =
+            sorted_type_t<sorted_list_t<type_list<Components...>>>;
+        constexpr auto hash_array = make_hash_array<type_list<Components...>>();
+        constexpr auto metainfo   = _get_metainfo(sorted_list{});
+        constexpr auto newinfo    = std::get<0>(metainfo);
 
-    template <
-        neutron::compatible_range<_hash_type> HashRng,
-        neutron::compatible_range<basic_info> InfoRng, typename... Components,
-        typename Al = Alloc>
-    constexpr archetype(
-        HashRng&& hrange, InfoRng&& irange, add_components_t<Components...>,
-        const Al& alloc = {})
-        : hash_list_(
-              std::ranges::begin(hrange), std::ranges::end(hrange), alloc),
-          basic_info_(
-              std::ranges::begin(irange), std::ranges::end(irange), alloc) {
-        using type_list          = neutron::type_list<Components...>;
-        constexpr auto hash_list = neutron::make_hash_array<type_list>();
-
-        // TODO: append info, constructors, move constructors, destructors
-        static_assert(false);
-#if HAS_CXX23
-        hash_list_.append_range(hash_list);
-#else
-        hash_list_.insert(hash_list_.end(), hash_list.begin(), hash_list.end());
-#endif
-        neutron::inplace_merge(
-            hash_list_, hash_list_.end() - hash_list.size(), basic_info_,
-            constructors_, move_constructors_, destructors_);
+        const auto size = archetype.hash_list_.size();
+        size_type i     = 0;
+        size_type j     = 0;
+        while (i < size && j < hash_array.size()) {
+            if (archetype.hash_list_[i] < hash_array[j]) {
+                hash_list_.push_back(archetype.hash_list_[i]);
+                const basic_info info = archetype.basic_info_[i];
+                basic_info_.push_back(info);
+                constructors_.push_back(archetype.constructors_[i]);
+                move_constructors_.push_back(archetype.move_constructors_[i]);
+                move_assignments_.push_back(archetype.move_assignments_[i]);
+                destructors_.push_back(archetype.destructors_[i]);
+                const auto align = _get_align(info.align);
+                auto* const ptr  = _get_ptr(info.size, align);
+                storage_.emplace_back(ptr, _buffer_deletor{ align });
+                ++i;
+            } else {
+                hash_list_.push_back(hash_array[j]);
+                const basic_info info = newinfo[j];
+                basic_info_.push_back(info);
+                constructors_.push_back(std::get<1>(metainfo)[j]);
+                move_constructors_.push_back(std::get<2>(metainfo)[j]);
+                move_assignments_.push_back(std::get<3>(metainfo)[j]);
+                destructors_.push_back(std::get<4>(metainfo)[j]);
+                const auto align = _get_align(info.align);
+                auto* const ptr  = _get_ptr(info.size, align);
+                storage_.emplace_back(ptr, _buffer_deletor{ align });
+                ++j;
+            }
+        }
+        for (; i < size; ++i) {
+            hash_list_.push_back(archetype.hash_list_[i]);
+            const basic_info info = basic_info_[i];
+            basic_info_.push_back(info);
+            constructors_.push_back(archetype.constructors_[i]);
+            move_constructors_.push_back(archetype.move_constructors_[i]);
+            move_assignments_.push_back(archetype.move_assignments_[i]);
+            destructors_.push_back(archetype.destructors_[i]);
+            const auto align = _get_align(info.align);
+            auto* const ptr  = _get_ptr(info.size, align);
+            storage_.emplace_back(ptr, _buffer_deletor{ align });
+        }
+        for (; j < hash_array.size(); ++j) {
+            hash_list_.push_back(hash_array[j]);
+            const basic_info info = newinfo[j];
+            basic_info_.push_back(info);
+            constructors_.push_back(std::get<1>(metainfo)[j]);
+            move_constructors_.push_back(std::get<2>(metainfo)[j]);
+            move_assignments_.push_back(std::get<3>(metainfo)[j]);
+            destructors_.push_back(std::get<4>(metainfo)[j]);
+            const auto align = _get_align(info.align);
+            auto* const ptr  = _get_ptr(info.size, align);
+            storage_.emplace_back(ptr, _buffer_deletor{ align });
+        }
+        capacity_ = initial_capacity;
+        hash_     = hash_combine(hash_list_);
     }
 
-    template <
-        neutron::compatible_range<_hash_type> HashRng,
-        neutron::compatible_range<basic_info> InfoRng, typename... Components,
-        typename Al = Alloc>
+    template <component... Components, typename Al = Alloc>
     constexpr archetype(
-        HashRng&& hrange, InfoRng&& irange, remove_components_t<Components...>,
-        const Al& alloc = {})
-        : hash_list_(
-              std::ranges::begin(hrange), std::ranges::end(hrange), alloc),
-          basic_info_(
-              std::ranges::begin(irange), std::ranges::end(irange), alloc) {
-        // TODO: remove hash, info, constructors, move constructors and
-        // destructors and sort them
-        static_assert(false);
+        const archetype& archetype, remove_components_t<Components...>)
+        : hash_list_(archetype.get_allocator()),
+          basic_info_(archetype.get_allocator()),
+          constructors_(archetype.get_allocator()),
+          move_constructors_(archetype.get_allocator()),
+          move_assignments_(archetype.get_allocator()),
+          destructors_(archetype.get_allocator()),
+          storage_(archetype.get_allocator()),
+          entity2index_(archetype.get_allocator()),
+          index2entity_(archetype.get_allocator()) {
+        using namespace neutron;
+        constexpr auto hash_array = make_hash_array<type_list<Components...>>();
+
+        const auto size = archetype.hash_list_.size();
+        size_t index    = 0;
+        size_t offset   = 0;
+        while (index != hash_array.size() && offset < size) {
+            if (hash_array[index] != archetype.hash_list_[offset]) {
+                // emplace
+                hash_list_.push_back(archetype.hash_list_[offset]);
+                const auto info = archetype.basic_info_[offset];
+                basic_info_.push_back(info);
+                constructors_.push_back(archetype.constructors_[offset]);
+                move_constructors_.push_back(
+                    archetype.move_constructors_[offset]);
+                move_assignments_.push_back(
+                    archetype.move_assignments_[offset]);
+                destructors_.push_back(archetype.destructors_[offset]);
+                const auto align = _get_align(info.align);
+                auto* const ptr  = _get_ptr(info.size, align);
+                storage_.emplace_back(ptr, _buffer_deletor{ align });
+                ++offset;
+            } else {
+                ++index;
+                ++offset;
+            }
+        }
+        for (; offset < size; ++offset) {
+            hash_list_.push_back(archetype.hash_list_[offset]);
+            const auto info = archetype.basic_info_[offset];
+            basic_info_.push_back(info);
+            constructors_.push_back(archetype.constructors_[offset]);
+            move_constructors_.push_back(archetype.move_constructors_[offset]);
+            move_assignments_.push_back(archetype.move_assignments_[offset]);
+            destructors_.push_back(archetype.destructors_[offset]);
+            const auto align = _get_align(info.align);
+            auto* const ptr  = _get_ptr(info.size, align);
+            storage_.emplace_back(ptr, _buffer_deletor{ align });
+        }
+        capacity_ = initial_capacity;
+        hash_     = hash_combine(hash_list_);
     }
 
     archetype(const archetype&)            = delete;
     archetype& operator=(const archetype&) = delete;
+
+    /**
+     * @brief Move constructor.
+     *
+     * Transfers ownership of all resources. Leaves the source in a valid but
+     * unspecified state.
+     */
     archetype(archetype&& that) noexcept
         : hash_list_(std::move(that.hash_list_)),
           basic_info_(std::move(that.basic_info_)),
@@ -381,9 +506,19 @@ public:
 
     archetype& operator=(archetype&&) = delete;
 
+    /**
+     * @brief Destructor.
+     *
+     * Invokes destructors for all live components and deallocates storage.
+     */
     CONSTEXPR23 ~archetype() noexcept {
         for (auto i = 0; i < hash_list_.size(); ++i) {
-            size_type size       = basic_info_[i].size;
+            const basic_info info = basic_info_[i];
+            const auto size       = info.size;
+            if (size == 0) {
+                continue;
+            }
+
             _dtor_fn dtor        = destructors_[i];
             std::byte* const ptr = storage_[i].get();
             for (size_type j = 0; j < size_; ++j) {
@@ -393,6 +528,12 @@ public:
         hash_list_.clear();
     }
 
+    /**
+     * @brief Checks whether the archetype contains the specified component(s).
+     *
+     * @tparam Args Component type(s) to query.
+     * @return `true` if all queried types are present; otherwise `false`.
+     */
     template <typename... Args>
     NODISCARD constexpr bool has() const noexcept {
         if constexpr (sizeof...(Args) == 1U) {
@@ -426,15 +567,43 @@ public:
     }
 
     constexpr void erase(entity_t entity) noexcept {
-        const auto index = entity2index_.at(entity);
-        for (auto i = 0; i < hash_list_.size(); ++i) {
-            const basic_info info = basic_info_[i];
-            _buffer_ptr& data     = storage_[i];
-            destructors_[i](data.get() + (index * info.size));
+        const auto index      = entity2index_.at(entity);
+        const auto last_index = size_ - 1;
+
+        if (index != last_index) {
+            for (uint32_t i = 0; i < hash_list_.size(); ++i) {
+                const basic_info info = basic_info_[i];
+                if (info.size == 0) {
+                    continue;
+                }
+
+                auto* const data = storage_[i].get();
+                auto* dst        = data + (info.size * index);
+                auto* src        = data + (info.size * last_index);
+
+                if (info.trivially_relocatable) {
+                    std::memcpy(dst, src, info.size);
+                } else {
+                    // requires component move assignable
+                    move_assignments_[i](dst, src);
+                    // requires component destructible
+                    destructors_[i](src);
+                }
+            }
+
+            const auto last_entity     = index2entity_[last_index];
+            index2entity_[index]       = last_entity;
+            entity2index_[last_entity] = index;
+        } else {
+            for (uint32_t i = 0; i < hash_list_.size(); ++i) {
+                const basic_info info = basic_info_[i];
+                auto* const data      = storage_[i].get();
+                destructors_[i](data + (info.size * index));
+            }
         }
-        index2entity_[index]                   = index2entity_.back();
-        entity2index_.at(index2entity_[index]) = index;
+
         entity2index_.erase(entity);
+        index2entity_.pop_back();
         --size_;
     }
 
@@ -456,62 +625,84 @@ public:
 
     NODISCARD _buffer_ptr data() noexcept { return storage_.data(); }
 
-    template <component Component>
-    NODISCARD constexpr auto get()
-        -> std::pair<std::byte*, typename _hash_vector::const_iterator> {
-        constexpr auto hash = neutron::hash_of<Component>();
-        const auto iter =
-            std::lower_bound(hash_list_.begin(), hash_list_.end(), hash);
-        if (iter == hash_list_.end()) [[unlikely]] {
-            return { nullptr, iter };
-        }
-
-        const auto index = std::distance(hash_list_.begin(), iter);
-
-        return { storage_[index].get(), iter };
+    template <component... Components>
+    requires(!std::is_empty_v<Components> && ...)
+    NODISCARD constexpr auto view() noexcept {
+        return ::proton::view<Components...>{ *this };
     }
 
-    template <component Component>
-    NODISCARD constexpr auto get(typename _hash_vector::const_iterator hint)
-        -> std::pair<std::byte*, typename _hash_vector::const_iterator> {
-        constexpr auto hash = neutron::hash_of<Component>();
-        const auto iter     = std::lower_bound(hint, hash_list_.end(), hash);
-        if (iter == hash_list_.end()) [[unlikely]] {
-            return { nullptr, iter };
-        }
+    template <component... Components>
+    requires(!std::is_empty_v<Components> && ...)
+    NODISCARD constexpr auto get()
+        -> std::array<std::byte*, sizeof...(Components)> {
+        using namespace neutron;
+        using type_list   = type_list<std::remove_cvref_t<Components>...>;
+        using sorted_list = sorted_list_t<type_list>;
+        using sorted_type = sorted_type_t<sorted_list>;
+        auto sorted       = _get_sorted(sorted_type{});
+        return _apply_indices(sorted, type_list{});
+    }
 
-        const auto index = std::distance(hash_list_.begin(), iter);
-
-        return { storage_[index].get(), iter };
+    NODISCARD constexpr auto get_allocator() const noexcept {
+        return hash_list_.get_allocator();
     }
 
 private:
-    template <size_t Index, component... SortedComponents>
-    constexpr void _set_storage() {
-        using namespace neutron;
-        using type = type_list_element_t<Index, type_list<SortedComponents...>>;
-
-        constexpr std::align_val_t align{ (std::max<size_t>)(32,
-                                                             alignof(type)) };
-        _buffer_ptr& data = storage_[Index];
-        auto* ptr =
-            static_cast<std::byte*>(::operator new(sizeof(type) * 64, align));
-        data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
+    constexpr static std::align_val_t _get_align(size_t align) noexcept {
+        return std::align_val_t{ (std::max<size_t>)(default_alignment, align) };
     }
 
-    template <
-        neutron::compatible_range<_hash_type> HashRng,
-        neutron::compatible_range<basic_info> InfoRng>
-    requires std::contiguous_iterator<std::ranges::iterator_t<HashRng>> &&
-             (std::ranges::sized_range<HashRng> ||
-              std::ranges::sized_range<InfoRng>)
-    NODISCARD constexpr static size_type
-        _preset_size(const HashRng& hrange, const InfoRng& irange) noexcept {
-        if constexpr (std::ranges::sized_range<HashRng>) {
-            return std::ranges::size(hrange);
-        } else {
-            return std::ranges::size(irange);
+    constexpr static std::byte*
+        _get_ptr(size_t size, std::align_val_t align) noexcept {
+        return static_cast<std::byte*>(
+            ::operator new(size * initial_capacity, align));
+    }
+
+    template <size_t Index, component... SortedComponents>
+    CONSTEXPR23 void _set_storage() {
+        using namespace neutron;
+        using type = type_list_element_t<Index, type_list<SortedComponents...>>;
+        constexpr auto align = _get_align(alignof(type));
+
+        if constexpr (std::is_empty_v<type>) {
+            return;
         }
+
+        _buffer_ptr& data = storage_[Index];
+
+        data = _buffer_ptr{ _get_ptr(sizeof(type), align),
+                            _buffer_deletor{ align } };
+    }
+
+    template <component... SortedComponents>
+    consteval auto
+        _get_metainfo(neutron::type_list<SortedComponents...>) noexcept {
+        constexpr std::array basic_info   = make_info<SortedComponents...>();
+        constexpr std::array constructors = { [](void* ptr) {
+            if constexpr (!std::is_empty_v<SortedComponents>) {
+                ::new (ptr) SortedComponents();
+            }
+        }... };
+        constexpr std::array move_constructors = { [](void* dst, void* src) {
+            if constexpr (!std::is_empty_v<SortedComponents>) {
+                ::new (dst) SortedComponents(
+                    std::move(*static_cast<SortedComponents*>(src)));
+            }
+        }... };
+        constexpr std::array move_assignments = { [](void* dst, void* src) {
+            if constexpr (!std::is_empty_v<SortedComponents>) {
+                *static_cast<SortedComponents*>(dst) =
+                    std::move(*static_cast<SortedComponents*>(src));
+            }
+        }... };
+        constexpr std::array destructors = { [](void* ptr) {
+            if constexpr (!std::is_empty_v<SortedComponents>) {
+                static_cast<SortedComponents*>(ptr)->~SortedComponents();
+            }
+        }... };
+        return std::make_tuple(
+            basic_info, constructors, move_constructors, move_assignments,
+            destructors);
     }
 
     constexpr auto _emplace(entity_t entity) {
@@ -529,8 +720,12 @@ private:
     constexpr auto _emplace_normally() {
         for (auto i = 0; i < hash_list_.size(); ++i) {
             const basic_info info = basic_info_[i];
-            _buffer_ptr& data     = storage_[i];
-            auto* const ptr       = data.get();
+            if (info.size == 0) {
+                continue;
+            }
+
+            _buffer_ptr& data = storage_[i];
+            auto* const ptr   = data.get();
             constructors_[i](ptr + (size_ * info.size));
         }
     }
@@ -539,8 +734,11 @@ private:
         const auto new_capacity = capacity_ << 1;
         for (auto i = 0; i < hash_list_.size(); ++i) {
             const basic_info info = basic_info_[i];
-            const auto align =
-                std::align_val_t{ (std::max<size_type>)(32, info.align) };
+            if (info.size == 0) {
+                continue;
+            }
+
+            const auto align = _get_align(info.align);
             const _buffer_deletor deletor{ align };
 
             auto& data = storage_[i];
@@ -548,8 +746,8 @@ private:
                 ::operator new(new_capacity * info.size, align));
             if (info.trivially_relocatable) {
                 std::memcpy(
-                    std::assume_aligned<32>(ptr),
-                    std::assume_aligned<32>(storage_[i].get()),
+                    std::assume_aligned<default_alignment>(ptr),
+                    std::assume_aligned<default_alignment>(storage_[i].get()),
                     capacity_ * info.size);
             } else {
                 for (auto i = 0; i < size_; ++i) {
@@ -592,29 +790,37 @@ private:
         ++size_;
     }
 
+    template <size_t Index, typename SortedList, typename Tup>
+    constexpr void _emplace_normally(Tup&& tup) {
+        using namespace neutron;
+        using type = type_list_element_t<Index, SortedList>;
+        if constexpr (std::is_empty_v<type>) {
+            return;
+        }
+
+        _buffer_ptr& data = storage_[Index];
+        auto* const ptr   = data.get() + (sizeof(type) * size_);
+        ::new (ptr) type(neutron::rmcvref_first<type>(std::forward<Tup>(tup)));
+    }
+
     template <component... SortedComponents, typename Tup>
     constexpr void _emplace_normally(
         [[maybe_unused]] neutron::type_list<SortedComponents...>, Tup&& tup) {
         using sorted_list = neutron::type_list<SortedComponents...>;
 
         [this, &tup]<size_t... Is>(std::index_sequence<Is...>) {
-            ((::new (
-                 storage_[Is].get() +
-                 (size_ *
-                  sizeof(neutron::type_list_element_t<Is, sorted_list>)))
-                  neutron::type_list_element_t<Is, sorted_list>(
-                      neutron::rmcvref_first<
-                          neutron::type_list_element_t<Is, sorted_list>>(
-                          std::forward<Tup>(tup)))),
-             ...);
+            (_emplace_normally<Is, sorted_list>(std::forward<Tup>(tup)), ...);
         }(std::index_sequence_for<SortedComponents...>());
     }
 
-    template <size_t Index, typename Tup, typename FwdTup>
+    template <size_t Index, typename SortedList, typename FwdTup>
     void _emplace_with_relocate(size_type new_capacity, FwdTup&& tup) {
-        using type = neutron::type_list_element_t<Index, Tup>;
-        constexpr auto align =
-            std::align_val_t{ (std::max<size_t>)(32, alignof(type)) };
+        using type = neutron::type_list_element_t<Index, SortedList>;
+        if constexpr (std::is_empty_v<type>) {
+            return;
+        }
+
+        constexpr auto align = _get_align(alignof(type));
 
         _buffer_ptr& data = storage_[Index];
         auto* ptr         = static_cast<std::byte*>(
@@ -629,7 +835,7 @@ private:
             auto* const output = reinterpret_cast<type*>(ptr);
             std::uninitialized_move_n(input, size_, output);
         }
-        ::new (ptr)
+        ::new (ptr + (sizeof(type) * capacity_))
             type(neutron::rmcvref_first<type>(std::forward<FwdTup>(tup)));
         data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
@@ -649,10 +855,45 @@ private:
         capacity_ = new_capacity;
     }
 
+    template <component... Components>
+    constexpr auto _get_sorted(neutron::type_list<Components...>) const noexcept
+        -> std::array<std::byte*, sizeof...(Components)> {
+        using namespace neutron;
+        using type_list = type_list<Components...>;
+        return [this]<size_t... Is>(std::index_sequence<Is...>) {
+            std::array<std::byte*, sizeof...(Components)> result;
+            auto hint = hash_list_.begin();
+            (_get_sorted<Is, type_list>(result, hint), ...);
+            return result;
+        }(std::index_sequence_for<Components...>());
+    }
+
+    template <size_t Index, typename TypeList>
+    constexpr void _get_sorted(auto& result, auto& hint) const noexcept {
+        using namespace neutron;
+        using type = type_list_element_t<Index, TypeList>;
+
+        hint = std::lower_bound(hint, hash_list_.end(), hash_of<type>());
+        const auto index = std::distance(hash_list_.begin(), hint);
+        result[Index]    = storage_[index].get();
+    }
+
+    template <typename TypeList>
+    constexpr auto _apply_indices(
+        const auto& sorted, [[maybe_unused]] TypeList) const noexcept {
+        constexpr std::array indices = neutron::sort_index<TypeList>();
+        std::remove_cvref_t<decltype(sorted)> result;
+        for (size_t i = 0; i < indices.size(); ++i) {
+            result[i] = sorted[indices[i]];
+        }
+        return result;
+    }
+
     _vector_t<_hash_type> hash_list_;
     _vector_t<basic_info> basic_info_;
     _vector_t<_ctor_fn> constructors_;
     _vector_t<_mov_ctor_fn> move_constructors_;
+    _vector_t<_mov_assign_fn> move_assignments_;
     _vector_t<_dtor_fn> destructors_;
     _vector_t<_buffer_ptr> storage_;
     size_type size_{};
