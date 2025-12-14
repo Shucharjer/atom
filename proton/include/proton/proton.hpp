@@ -225,8 +225,8 @@ template <typename Filter>
 concept query_filter = requires(
     Filter& filter, std::vector<archetype<>>& out,
     const std::vector<archetype<>>& archetypes) {
-    filter.init(out, archetypes);
-    filter.fetch(out, archetypes);
+    { filter.init(archetypes) } -> std::same_as<bool>;
+    { filter.fetch(out, archetypes) } -> std::same_as<bool>;
 };
 
 template <typename... Filters>
