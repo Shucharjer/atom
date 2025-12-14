@@ -1,3 +1,4 @@
+#include <iterator>
 #include <string>
 #include <neutron/print.hpp>
 #include <proton/archetype.hpp>
@@ -10,6 +11,9 @@ template <>
 constexpr inline bool as_component<std::string> = true;
 template <>
 constexpr inline bool as_component<int> = true;
+struct player {};
+template <>
+constexpr inline bool as_component<player> = true;
 
 void test_has() {
     archetype<> arche_string{ spread_type<std::string> };
@@ -25,6 +29,8 @@ void test_view() {
     arche.emplace(0, std::string{ "string" }, 32);
     arche.emplace(1, std::string{ "_1" }, 1);
     view<const std::string&, int> vw{ arche };
+    static_assert(std::bidirectional_iterator<
+                  std::ranges::iterator_t<view<const std::string&, int>>>);
     println("before erase");
     for (auto [str, integer] : arche.view<const std::string&, int>()) {
         println("{}", str);
@@ -46,9 +52,19 @@ void test_view() {
     }
 }
 
+void test_empty() {
+    archetype<> arche{ spread_type<std::string, player> };
+    arche.emplace(0);
+    auto vw = arche.view<std::string&, player>();
+    for (auto [str] : vw) {
+        //
+    }
+}
+
 int main() {
     test_has();
     test_view();
+    test_empty();
 
     return 0;
 }
