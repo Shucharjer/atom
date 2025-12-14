@@ -95,6 +95,7 @@ BraceWrapping:
 BreakAfterAttributes: Never
 BreakBeforeTernaryOperators: true
 BreakInheritanceList: AfterColon
+BreakStringLiterals: false
 
 # 命名空间后缩进
 NamespaceIndentation: None
