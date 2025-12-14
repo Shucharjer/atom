@@ -11,11 +11,9 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <neutron/algorithm.hpp>
 #include <neutron/concepts.hpp>
 #include <neutron/dense_map.hpp>
 #include <neutron/ranges.hpp>
-#include <neutron/reflection.hpp>
 #include <neutron/shift_map.hpp>
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
@@ -26,11 +24,149 @@
 namespace proton {
 
 template <component... Components>
-class view {
+class view;
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
+// NOLINTBEGIN(modernize-avoid-c-arrays)
+
+namespace _view {
+
+template <component... Components>
+class view;
+
+template <component... Components>
+class eview {
+    friend class view<Components...>;
+
 public:
-    using value_type      = std::tuple<Components...>;
+    class iterator {
+        friend class eview<Components...>;
+
+        constexpr iterator(
+            entity_t* entity,
+            const std::tuple<std::remove_cvref_t<Components>*...>&
+                storage) noexcept
+            : entity_(entity), storage_(storage) {}
+
+    public:
+        using value_type      = std::tuple<entity_t, Components...>;
+        using reference       = value_type; // As components could be reference.
+        using size_type       = size_t;
+        using difference_type = ptrdiff_t;
+        using iterator_concept = std::contiguous_iterator_tag;
+
+        constexpr iterator(const iterator& that) noexcept            = default;
+        constexpr iterator(iterator&& that) noexcept                 = default;
+        constexpr iterator& operator=(const iterator& that) noexcept = default;
+        constexpr iterator& operator=(iterator&& that) noexcept      = default;
+        constexpr ~iterator() noexcept                               = default;
+
+        constexpr auto operator*() const noexcept -> value_type {
+            return std::tuple_cat(
+                std::tuple(*entity_),
+                std::apply(
+                    [](auto*... ptrs) {
+                        return std::tuple<Components...>((*ptrs)...);
+                    },
+                    storage_));
+        }
+
+        // input_iterator
+
+        constexpr auto operator++() noexcept -> iterator& {
+            ++entity_;
+            [this]<size_t... Is>(std::index_sequence<Is...>) {
+                (++std::get<Is>(storage_), ...);
+            }(std::index_sequence_for<Components...>());
+            return *this;
+        }
+        constexpr auto operator++(int) noexcept -> iterator {
+            iterator temp = *this;
+            ++entity_;
+            [this]<size_t... Is>(std::index_sequence<Is...>) {
+                (++std::get<Is>(storage_), ...);
+            }(std::index_sequence_for<Components...>());
+            return temp;
+        }
+
+        constexpr std::strong_ordering
+            operator<=>(const iterator& that) const noexcept {
+            return storage_ <=> that.storage_;
+        }
+
+        constexpr bool operator==(const iterator& that) const noexcept {
+            return storage_ == that.storage_;
+        }
+
+        constexpr bool operator!=(const iterator& that) const noexcept {
+            return storage_ != that.storage_;
+        }
+
+        // bidirectional
+
+        constexpr auto operator--() noexcept -> iterator& {
+            --entity_;
+            [this]<size_t... Is>(std::index_sequence<Is...>) {
+                (--std::get<Is>(storage_), ...);
+            }(std::index_sequence_for<Components...>());
+            return *this;
+        }
+        constexpr auto operator--(int) noexcept -> iterator {
+            iterator temp = *this;
+            --entity_;
+            [this]<size_t... Is>(std::index_sequence<Is...>) {
+                (--std::get<Is>(storage_), ...);
+            }(std::index_sequence_for<Components...>());
+            return temp;
+        }
+
+        // random access
+
+        constexpr auto operator+=(ptrdiff_t diff) noexcept -> iterator& {
+            entity_ += diff;
+            [this, diff]<size_t... Is>(std::index_sequence<Is...>) {
+                ((std::get<Is>(storage_) += diff), ...);
+            }(std::index_sequence_for<Components...>());
+            return *this;
+        }
+        constexpr auto operator+(ptrdiff_t diff) const noexcept -> iterator {
+            iterator temp = *this;
+            temp += diff;
+            return temp;
+        }
+        constexpr auto operator-=(ptrdiff_t diff) noexcept -> iterator& {
+            entity_ -= diff;
+            [this, diff]<size_t... Is>(std::index_sequence<Is...>) {
+                ((std::get<Is>(storage_) -= diff), ...);
+            }(std::index_sequence_for<Components...>());
+            return *this;
+        }
+        constexpr auto operator-(ptrdiff_t diff) noexcept -> iterator {
+            iterator temp = *this;
+            temp -= diff;
+            return temp;
+        }
+
+        constexpr ptrdiff_t operator-(const iterator& that) const noexcept {
+            return entity_ - that.entity_;
+        }
+
+        // support range
+
+        // satisfy sentinel_for.semiregular
+        // satisfy semiregular.default_constructible
+        constexpr iterator() noexcept = default;
+
+    private:
+        entity_t* entity_{};
+        std::tuple<std::remove_cvref_t<Components>*...> storage_;
+    };
+    using value_type      = std::tuple<entity_t, Components...>;
     using size_type       = size_t;
     using difference_type = ptrdiff_t;
+
+    // using iterator        = _view::iterator<Components...>;
     using _type_list = neutron::type_list<std::remove_cvref_t<Components>...>;
     using _sorted_list =
         neutron::sorted_type_t<neutron::sorted_list_t<_type_list>>;
@@ -42,7 +178,8 @@ public:
         "the view of components should contains at least one component");
 
     template <typename Archetype>
-    view(Archetype& arche) noexcept : size_(arche.size()) {
+    eview(Archetype& arche) noexcept
+        : size_(arche.size_), entities_(arche.index2entity_.data()) {
         std::array storage = arche.template get<Components...>();
         [this, &storage]<size_t... Is>(std::index_sequence<Is...>) {
             ((std::get<Is>(storage_) =
@@ -52,6 +189,31 @@ public:
         }(std::index_sequence_for<Components...>());
     }
 
+    constexpr auto begin() const noexcept {
+        return iterator{ entities_, storage_ };
+    }
+    constexpr auto end() const noexcept {
+        return iterator{ entities_, storage_ } + size_;
+    }
+    constexpr auto rbegin() const noexcept {
+        return std::make_reverse_iterator(
+            iterator{ entities_, storage_ } + size_);
+    }
+    constexpr auto rend() const noexcept {
+        return std::make_reverse_iterator(iterator{ entities_, storage_ });
+    }
+    constexpr auto size() const noexcept { return size_; }
+    constexpr auto empty() const noexcept { return size_ == 0; }
+
+private:
+    size_type size_;
+    entity_t* entities_;
+    std::tuple<std::remove_cvref_t<Components>*...> storage_;
+};
+
+template <component... Components>
+class view {
+public:
     class iterator {
         friend class view<Components...>;
 
@@ -62,8 +224,10 @@ public:
 
     public:
         using value_type      = std::tuple<Components...>;
+        using reference       = value_type; // As components could be reference.
         using size_type       = size_t;
         using difference_type = ptrdiff_t;
+        using iterator_concept = std::contiguous_iterator_tag;
 
         constexpr iterator(const iterator& that) noexcept            = default;
         constexpr iterator(iterator&& that) noexcept                 = default;
@@ -71,13 +235,15 @@ public:
         constexpr iterator& operator=(iterator&& that) noexcept      = default;
         constexpr ~iterator() noexcept                               = default;
 
-        constexpr auto operator*() noexcept -> value_type {
+        constexpr auto operator*() const noexcept -> value_type {
             return std::apply(
                 [](auto*... ptrs) {
                     return std::tuple<Components...>((*ptrs)...);
                 },
                 storage_);
         }
+
+        // input_iterator
 
         constexpr auto operator++() noexcept -> iterator& {
             [this]<size_t... Is>(std::index_sequence<Is...>) {
@@ -92,17 +258,22 @@ public:
             }(std::index_sequence_for<Components...>());
             return temp;
         }
-        constexpr auto operator+=(ptrdiff_t diff) noexcept -> iterator& {
-            [this, diff]<size_t... Is>(std::index_sequence<Is...>) {
-                ((std::get<Is>(storage_) += diff), ...);
-            }(std::index_sequence_for<Components...>());
-            return *this;
+
+        constexpr std::strong_ordering
+            operator<=>(const iterator& that) const noexcept {
+            return storage_ <=> that.storage_;
         }
-        constexpr auto operator+(ptrdiff_t diff) const noexcept -> iterator {
-            iterator temp = *this;
-            temp += diff;
-            return temp;
+
+        constexpr bool operator==(const iterator& that) const noexcept {
+            return storage_ == that.storage_;
         }
+
+        constexpr bool operator!=(const iterator& that) const noexcept {
+            return storage_ != that.storage_;
+        }
+
+        // bidirectional
+
         constexpr auto operator--() noexcept -> iterator& {
             [this]<size_t... Is>(std::index_sequence<Is...>) {
                 (--std::get<Is>(storage_), ...);
@@ -114,6 +285,20 @@ public:
             [this]<size_t... Is>(std::index_sequence<Is...>) {
                 (--std::get<Is>(storage_), ...);
             }(std::index_sequence_for<Components...>());
+            return temp;
+        }
+
+        // random access
+
+        constexpr auto operator+=(ptrdiff_t diff) noexcept -> iterator& {
+            [this, diff]<size_t... Is>(std::index_sequence<Is...>) {
+                ((std::get<Is>(storage_) += diff), ...);
+            }(std::index_sequence_for<Components...>());
+            return *this;
+        }
+        constexpr auto operator+(ptrdiff_t diff) const noexcept -> iterator {
+            iterator temp = *this;
+            temp += diff;
             return temp;
         }
         constexpr auto operator-=(ptrdiff_t diff) noexcept -> iterator& {
@@ -128,22 +313,52 @@ public:
             return temp;
         }
 
-        constexpr std::strong_ordering
-            operator<=>(const iterator& that) const noexcept {
-            return storage_ <=> that.storage_;
+        constexpr ptrdiff_t operator-(const iterator& that) const noexcept {
+            return std::get<0>(storage_) - std::get<0>(that.storage_);
         }
 
-        constexpr bool operator!=(const iterator& that) const noexcept {
-            return storage_ != that.storage_;
-        }
+        // support range
+
+        // satisfy sentinel_for.semiregular
+        // satisfy semiregular.default_constructible
+        constexpr iterator() noexcept = default;
 
     private:
         std::tuple<std::remove_cvref_t<Components>*...> storage_;
     };
+    using value_type      = std::tuple<Components...>;
+    using size_type       = size_t;
+    using difference_type = ptrdiff_t;
 
-    constexpr auto begin() noexcept { return iterator{ storage_ }; }
-    constexpr auto end() noexcept { return iterator{ storage_ } + size_; }
-    constexpr auto rbegin() noexcept {
+    // using iterator        = _view::iterator<Components...>;
+    using _type_list = neutron::type_list<std::remove_cvref_t<Components>...>;
+    using _sorted_list =
+        neutron::sorted_type_t<neutron::sorted_list_t<_type_list>>;
+
+    static constexpr auto indices = neutron::sort_index<_type_list>();
+
+    static_assert(
+        sizeof...(Components) > 0,
+        "the view of components should contains at least one component");
+
+    template <typename Archetype>
+    requires requires(Archetype& archetype) { archetype.emplace(); }
+    view(Archetype& arche) noexcept : size_(arche.size_) {
+        std::array storage = arche.template get<Components...>();
+        [this, &storage]<size_t... Is>(std::index_sequence<Is...>) {
+            ((std::get<Is>(storage_) =
+                  reinterpret_cast<std::remove_cvref_t<Components>*>(
+                      storage[Is])),
+             ...);
+        }(std::index_sequence_for<Components...>());
+    }
+
+    view(const eview<Components...>& ev) noexcept
+        : size_(ev.size_), storage_(ev.storage_) {}
+
+    constexpr auto begin() const noexcept { return iterator{ storage_ }; }
+    constexpr auto end() const noexcept { return iterator{ storage_ } + size_; }
+    constexpr auto rbegin() const noexcept {
         return std::make_reverse_iterator(iterator{ storage_ } + size_);
     }
     constexpr auto rend() noexcept {
@@ -155,6 +370,54 @@ public:
 private:
     size_type size_;
     std::tuple<std::remove_cvref_t<Components>*...> storage_;
+};
+
+template <component... Components>
+view(const eview<Components...>&) -> view<Components...>;
+
+template <typename>
+struct _removed_empty;
+template <template <typename...> typename Vw, component... Components>
+struct _removed_empty<Vw<Components...>> {
+    template <typename Ty>
+    using predicate_type = std::negation<std::is_empty<Ty>>;
+    using type = neutron::type_list_filt_t<predicate_type, Vw<Components...>>;
+};
+
+} // namespace _view
+
+template <component... Components>
+class eview : public _view::_removed_empty<_view::eview<Components...>>::type {
+public:
+    using _view_base = _view::_removed_empty<_view::eview<Components...>>::type;
+    using value_type = typename _view_base::value_type;
+    using reference  = value_type;
+    using size_type  = typename _view_base::size_type;
+    using iterator   = typename _view_base::iterator;
+};
+
+template <component... Components>
+class view : public _view::_removed_empty<_view::view<Components...>>::type {
+    template <template <typename...> typename Vw>
+    using _remove_empty = _view::_removed_empty<Vw<Components...>>::type;
+
+public:
+    using _view_base  = _remove_empty<_view::view>;
+    using _eview_base = _remove_empty<_view::eview>;
+    using value_type  = typename _view_base::value_type;
+    using reference   = value_type;
+    using size_type   = typename _view_base::size_type;
+    using iterator    = typename _view_base::iterator;
+
+    using _view_base::_view_base;
+    view(const eview<Components...>& ev) noexcept
+        : _view_base(static_cast<const _eview_base&>(ev)) {}
+    using _view_base::begin;
+    using _view_base::rbegin;
+    using _view_base::end;
+    using _view_base::rend;
+    using _view_base::size;
+    using _view_base::empty;
 };
 
 /**
@@ -218,10 +481,6 @@ struct add_components_t {};
 template <component... Comp>
 struct remove_components_t {};
 
-// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
-// NOLINTBEGIN(modernize-avoid-c-arrays)
-
 /**
  * @brief Custom deleter for aligned memory allocated via `operator new(size,
  * align_val_t)`.
@@ -252,8 +511,10 @@ using _buffer_ptr = std::unique_ptr<std::byte[], _buffer_deletor>;
  */
 template <_std_simple_allocator Alloc>
 class archetype {
-    template <component... Comp>
-    friend class view;
+    template <component...>
+    friend class _view::view;
+    template <component...>
+    friend class _view::eview;
 
     template <typename Ty>
     using _allocator_t = rebind_alloc_t<Alloc, Ty>;
@@ -626,13 +887,11 @@ public:
     NODISCARD _buffer_ptr data() noexcept { return storage_.data(); }
 
     template <component... Components>
-    requires(!std::is_empty_v<Components> && ...)
     NODISCARD constexpr auto view() noexcept {
         return ::proton::view<Components...>{ *this };
     }
 
     template <component... Components>
-    requires(!std::is_empty_v<Components> && ...)
     NODISCARD constexpr auto get()
         -> std::array<std::byte*, sizeof...(Components)> {
         using namespace neutron;
@@ -641,6 +900,10 @@ public:
         using sorted_type = sorted_type_t<sorted_list>;
         auto sorted       = _get_sorted(sorted_type{});
         return _apply_indices(sorted, type_list{});
+    }
+
+    NODISCARD constexpr auto entities() noexcept -> entity_t* {
+        return index2entity_.data();
     }
 
     NODISCARD constexpr auto get_allocator() const noexcept {
