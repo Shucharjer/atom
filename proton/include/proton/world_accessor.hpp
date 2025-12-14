@@ -5,6 +5,10 @@ namespace proton {
 
 struct world_accessor {
     template <world World>
+    NODISCARD static decltype(auto) base(World& world) noexcept {
+        return world._base();
+    }
+    template <world World>
     static auto& archetypes(World& world) noexcept {
         return world.archetypes_;
     }
