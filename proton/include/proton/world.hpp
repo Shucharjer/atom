@@ -21,13 +21,14 @@ class basic_world<registry<world_desc>, Alloc> : world_base<Alloc> {
     friend struct world_accessor;
 
 public:
-    using registry_t   = registry<world_desc>;
-    using components   = typename registry_t::components;
-    using resources    = typename registry_t::resources;
-    using system_lists = typename registry_t::system_list;
-    using systems      = typename registry_t::systems;
-    using locals       = typename registry_t::locals;
-    using archetype    = typename world_base<Alloc>::archetype;
+    using allocator_type = Alloc;
+    using registry_t     = registry<world_desc>;
+    using components     = typename registry_t::components;
+    using resources      = typename registry_t::resources;
+    using system_lists   = typename registry_t::system_list;
+    using systems        = typename registry_t::systems;
+    using locals         = typename registry_t::locals;
+    using archetype      = typename world_base<Alloc>::archetype;
 
     template <typename Al = Alloc>
     constexpr explicit basic_world(const Al& alloc = {})
@@ -41,14 +42,23 @@ class basic_world : world_base<Alloc> {
     template <typename Ty>
     using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
+    auto _base() & noexcept -> world_base<Alloc>& {
+        return *static_cast<world_base<Alloc>*>(this);
+    }
+
+    auto _base() const& noexcept -> const world_base<Alloc>& {
+        return *static_cast<const world_base<Alloc>*>(this);
+    }
+
 public:
-    using registry_t   = Registry;
-    using components   = typename registry_t::components;
-    using resources    = typename registry_t::resources;
-    using system_lists = typename registry_t::system_list;
-    using systems      = typename registry_t::systems;
-    using locals       = typename registry_t::locals;
-    using archetype    = typename world_base<Alloc>::archetype;
+    using allocator_type = Alloc;
+    using registry_t     = Registry;
+    using components     = typename registry_t::components;
+    using resources      = typename registry_t::resources;
+    using system_lists   = typename registry_t::system_list;
+    using systems        = typename registry_t::systems;
+    using locals         = typename registry_t::locals;
+    using archetype      = typename world_base<Alloc>::archetype;
 
 private:
     template <stage Stage>
