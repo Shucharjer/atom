@@ -15,13 +15,15 @@
 
 namespace proton {
 
+struct world_accessor;
+
 namespace _world_base {
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
 class world_base {
     template <typename, _std_simple_allocator>
     friend class basic_world;
 
-    friend struct world_accessor;
+    friend struct ::proton::world_accessor;
 
     template <typename Ty>
     using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
@@ -83,6 +85,10 @@ private:
         entities_;
     _vector_t<generation_t> generations_;
     _priority_queue<uint32_t> free_indices_;
+
+    // for fast query
+
+    _unordered_map<uint64_t, _vector_t<archetype*>> combined_archetypes_;
 };
 
 ATOM_FORCE_INLINE constexpr static index_t
@@ -108,8 +114,8 @@ constexpr entity_t world_base<Alloc>::spawn() {
 }
 
 template <_std_simple_allocator Alloc>
-template <typename...Components>
-constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity){}
+template <typename... Components>
+constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity) {}
 
 template <_std_simple_allocator Alloc>
 template <component... Components>
