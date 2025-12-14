@@ -1,9 +1,9 @@
 #pragma once
 #include "proton/proton.hpp"
 
-#include <cstdint>
-#include <numeric>
-#include <unordered_map>
+#include <cstddef>
+#include <ranges>
+#include <type_traits>
 #include <vector>
 #include <neutron/template_list.hpp>
 #include "proton/archetype.hpp"
@@ -33,30 +33,79 @@ struct changed;
 
 template <component_like... Args>
 struct with {
-    using conflict_list = without<Args...>;
-    constexpr void init(auto& out, const auto& archetypes) {}
-    constexpr void fetch(auto& out, const auto& archetype) {}
+    using _with_t = neutron::type_list_recurse_expose_t<
+        bundle, with<Args...>, neutron::same_cvref>;
+
+    template <typename>
+    struct _impl;
+    template <component... Components>
+    struct _impl<with<Components...>> {
+        template <typename Archetype>
+        static constexpr bool init(const Archetype& archetype) {
+            return archetype.template has<std::remove_cvref_t<Components>...>();
+        }
+    };
+
+    constexpr bool init(auto& archetypes) {
+        return _impl<_with_t>::init(archetypes);
+    }
+    constexpr bool fetch(auto& out, const auto& archetype) { return true; }
 };
 
 template <component_like... Args>
 struct without {
-    using confilct_list = with<Args...>;
-    constexpr void init(auto& out, const auto& archetypes) {}
-    constexpr void fetch(auto& out, const auto& archetype) {}
+    using _without_t = neutron::type_list_recurse_expose_t<
+        bundle, without<Args...>, neutron::same_cvref>;
+
+    template <typename>
+    struct _impl;
+    template <component... Components>
+    struct _impl<without<Components...>> {
+        template <typename Archetype>
+        static constexpr void init(const Archetype& archetype) {
+            return (
+                !archetype.template has<std::remove_cvref_t<Components>>() &&
+                ...);
+        }
+    };
+
+    constexpr void init(auto& archetypes) {
+        _impl<_without_t>::init(archetypes);
+    }
+    constexpr bool fetch(auto& out, const auto& archetype) { return true; }
 };
 
 template <component_like... Args>
 struct withany {
-    using conflict_list = without<Args...>;
-    constexpr void init(auto& out, const auto& archetypes) {}
-    constexpr void fetch(auto& out, const auto& archetype) {}
+    using _withany_t = neutron::type_list_recurse_expose_t<
+        bundle, withany<Args...>, neutron::same_cvref>;
+
+    template <typename>
+    struct _impl;
+    template <component... Components>
+    struct _impl<withany<Components...>> {
+        template <typename Archetype>
+        static constexpr bool init(const Archetype& archetype) {
+            return (
+                archetype.template has<std::remove_cvref_t<Components>>() ||
+                ...);
+        }
+    };
+
+    constexpr bool init(auto& archetypes) {
+        return _impl<_withany_t>::init(archetypes);
+    }
+    constexpr bool fetch(auto& out, const auto& archetype) { return true; }
 };
 
 template <component_like... Args>
 struct changed {
     using conflict_list = without<Args...>;
     constexpr void init(auto& out, const auto& archetypes) {}
-    constexpr void fetch(auto& out, const auto& archetype) {}
+    constexpr bool fetch(auto& out, const auto& archetype) {
+        static_assert(false);
+        return true;
+    }
 };
 
 template <typename Ty>
@@ -78,34 +127,58 @@ template <typename Ty>
 constexpr auto _is_without_v = _is_without<Ty>::value;
 
 template <typename Ty>
-struct _is_with_any : neutron::is_specific_type_list<withany, Ty> {};
+struct _is_withany : neutron::is_specific_type_list<withany, Ty> {};
 template <typename Ty>
-constexpr auto _is_with_any_v = _is_with_any<Ty>::value;
+constexpr auto _is_withany_v = _is_withany<Ty>::value;
 
 template <query_filter... Filters>
 class query<Filters...> {
 public:
+// The implementation of `withany` might be somewhat complex, so it will be put
+// on hold for now.
+// NOLINTNEXTLINE
+#if false
+    template <typename Filter>
+    using _is_with_or_withany =
+        std::bool_constant<_is_with_v<Filter> || _is_withany_v<Filter>>;
+#else
+    template <typename Filter>
+    using _is_with_or_withany = std::bool_constant<_is_with_v<Filter>>;
+#endif
+
+    using component_list = neutron::type_list_recurse_expose_t<
+        bundle,
+        neutron::type_list_expose_t<
+            with, neutron::type_list_filt_t<_is_with_or_withany, query>>,
+        neutron::same_cvref>;
+
+    using view_t  = neutron::type_list_rebind_t<view, component_list>;
+    using eview_t = neutron::type_list_rebind_t<eview, component_list>;
+
+    template <typename Ty>
+    using _vector_t = std::vector<Ty>;
+
     template <world World>
     explicit query(World& world) {
         auto& archetypes = world_accessor::archetypes(world);
-        archetypes_.resize(archetypes.size());
-        std::iota(archetypes_.begin(), archetypes_.end(), 0);
-        (Filters::init(archetypes_, archetypes), ...);
+        for (auto& [hash, archetype] : archetypes) {
+            if ((Filters{}.init(archetype) && ...)) {
+                eviews_.emplace_back(archetype);
+            }
+        }
     }
 
-    auto get();
+    auto get() noexcept {
+        constexpr auto tovw = [](const eview_t& ev) { return view_t{ ev }; };
+        return eviews_ | std::views::transform(tovw) | std::views::join;
+    }
 
-    template <component Component>
-    auto get();
+    auto get_with_entity() noexcept { return eviews_ | std::views::join; }
 
-    template <component... Components>
-    requires(sizeof...(Components) > 1)
-    auto get();
-
-    auto get_with_entity();
+    NODISCARD size_t size() const noexcept { return eviews_.size(); }
 
 private:
-    std::vector<id_t> archetypes_;
+    std::vector<eview_t> eviews_;
 };
 
 namespace internal {
