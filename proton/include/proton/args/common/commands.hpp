@@ -1,17 +1,17 @@
 #pragma once
 #include <concepts>
+#include <memory_resource>
 #include <utility>
 #include "proton/command_buffer.hpp"
 #include "proton/proton.hpp"
 
 namespace proton {
 
-class commands {
+template <_std_simple_allocator Alloc>
+class basic_commands {
 public:
-    template <typename CommandBuffer>
-    requires std::convertible_to<
-        CommandBuffer&, _command_buffer::_command_buffer_base&>
-    explicit commands(CommandBuffer& command_buffer) noexcept
+    explicit constexpr basic_commands(
+        command_buffer<Alloc>& command_buffer) noexcept
         : command_buffer_(&command_buffer) {}
 
     future_entity_t spawn() { return command_buffer_->spawn(); }
@@ -19,7 +19,7 @@ public:
     template <component... Components>
     requires(std::same_as<Components, std::remove_cvref_t<Components>> && ...)
     future_entity_t spawn() {
-        return command_buffer_->spawn<Components...>();
+        return command_buffer_->template spawn<Components...>();
     }
 
     template <component... Components>
@@ -29,12 +29,12 @@ public:
 
     template <component... Components>
     void add_components(future_entity_t entity) {
-        return command_buffer_->add_components<Components...>(entity);
+        return command_buffer_->template add_components<Components...>(entity);
     }
 
     template <component... Components>
     void add_components(entity_t entity) {
-        return command_buffer_->add_components<Components...>(entity);
+        return command_buffer_->template add_components<Components...>(entity);
     }
 
     template <typename Entity, component... Components>
@@ -45,20 +45,42 @@ public:
 
     template <component... Components>
     void remove_components(future_entity_t entity) {
-        return command_buffer_->remove_components<Components...>(entity);
+        return command_buffer_->template remove_components<Components...>(
+            entity);
     }
 
     template <component... Components>
     void remove_components(entity_t entity) {
-        return command_buffer_->remove_components<Components...>(entity);
+        return command_buffer_->template remove_components<Components...>(
+            entity);
     }
 
     void kill(future_entity_t entity);
 
     void kill(entity_t entity);
 
+    command_buffer<Alloc>* get_command_buffer() const noexcept {
+        return command_buffer_;
+    }
+
 private:
-    _command_buffer::_command_buffer_base* command_buffer_;
+    command_buffer<Alloc>* command_buffer_;
 };
+
+template <auto Sys, _std_simple_allocator Alloc, size_t Index>
+struct construct_from_world_t<Sys, basic_commands<Alloc>, Index> {
+    template <world World>
+    basic_commands<Alloc> operator()(World& world) const noexcept {
+        const auto cmdbuf_index = Index % world.command_buffers_->size();
+        return basic_commands<Alloc>{ world.command_buffers_->at(
+            cmdbuf_index) };
+    }
+};
+
+namespace pmr {
+
+using commands = basic_commands<std::pmr::polymorphic_allocator<>>;
+
+} // namespace pmr
 
 } // namespace proton
