@@ -4,11 +4,14 @@
 #include <cstddef>
 #include <type_traits>
 #include <utility>
+#include <vector>
+#include <neutron/execution.hpp>
 #include <neutron/memory.hpp>
 #include <neutron/shared_tuple.hpp>
 #include <neutron/shift_map.hpp>
 #include <neutron/type_hash.hpp>
 #include "proton.hpp"
+#include "proton/command_buffer.hpp"
 #include "proton/registry.hpp"
 #include "proton/stage.hpp"
 #include "proton/system.hpp"
@@ -18,6 +21,8 @@ namespace proton {
 
 template <_std_simple_allocator Alloc>
 class basic_world<registry<world_desc>, Alloc> : world_base<Alloc> {
+    template <auto Sys, typename Argument>
+    friend struct construct_from_world_t;
     friend struct world_accessor;
 
 public:
@@ -29,6 +34,7 @@ public:
     using systems        = typename registry_t::systems;
     using locals         = typename registry_t::locals;
     using archetype      = typename world_base<Alloc>::archetype;
+    using command_buffer = command_buffer<Alloc>;
 
     template <typename Al = Alloc>
     constexpr explicit basic_world(const Al& alloc = {})
@@ -37,10 +43,9 @@ public:
 
 template <typename Registry, _std_simple_allocator Alloc>
 class basic_world : world_base<Alloc> {
+    template <auto Sys, typename Argument>
+    friend struct construct_from_world_t;
     friend struct world_accessor;
-
-    template <typename Ty>
-    using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
     auto _base() & noexcept -> world_base<Alloc>& {
         return *static_cast<world_base<Alloc>*>(this);
@@ -51,6 +56,12 @@ class basic_world : world_base<Alloc> {
     }
 
 public:
+    template <typename Ty>
+    using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
+
+    template <typename Ty>
+    using _vector_t = std::vector<Ty, _allocator_t<Ty>>;
+
     using allocator_type = Alloc;
     using registry_t     = Registry;
     using components     = typename registry_t::components;
@@ -59,6 +70,18 @@ public:
     using systems        = typename registry_t::systems;
     using locals         = typename registry_t::locals;
     using archetype      = typename world_base<Alloc>::archetype;
+    using command_buffer = command_buffer<Alloc>;
+
+    template <typename Al = Alloc>
+    constexpr explicit basic_world(const Al& alloc = {})
+        : world_base<Alloc>(alloc), resources_(), locals_() {}
+
+    template <stage Stage, neutron::execution::scheduler Sch>
+    void call(Sch& sch, _vector_t<command_buffer>& cmdbufs) {
+        using run_list   = _get_systems<Stage>::type;
+        command_buffers_ = &cmdbufs;
+        _call_run_list<run_list>{}(sch, this);
+    }
 
 private:
     template <stage Stage>
@@ -74,16 +97,17 @@ private:
                 neutron::type_list_filt_t<_is_specific_stage, system_lists>>>;
     };
 
+    // call a system with corresponding arguments
     template <auto Sys>
-    struct _call_system {
+    struct _call_sys {
         using system_traits = _system_traits<decltype(Sys)>;
         using arg_list      = typename system_traits::arg_list;
         template <typename>
         struct call;
         template <template <typename...> typename Template, typename... Args>
         struct call<Template<Args...>> {
-            void operator()(basic_world* world) noexcept(
-                system_traits::is_nothrow) {
+            void operator()(basic_world* world) const
+                noexcept(system_traits::is_nothrow) {
                 Sys(construct_from_world<Sys, Args>(*world)...);
             }
         };
@@ -91,39 +115,48 @@ private:
         void operator()(basic_world* world) { call<arg_list>{}(world); }
     };
 
+    void _apply_command_buffers() noexcept {
+        for (auto& cmdbuf : *command_buffers_) {
+            // iterate & apply cmd in the cmdbuf
+        }
+    }
+
+    // call systems in the same system list.
     template <typename>
-    struct _call_system_list;
+    struct _call;
     template <template <auto...> typename Template, auto... Systems>
-    struct _call_system_list<Template<Systems...>> {
-        template <typename Scheduler>
-        void operator()(Scheduler& scheduler, basic_world* self) {
-            // TODO: execution
+    struct _call<Template<Systems...>> {
+        template <typename Sch>
+        void operator()(Sch& sch, basic_world* self) const noexcept {
+            using namespace neutron::execution;
+            auto all = when_all((schedule(sch) | then([self] {
+                                     _call_sys<Systems>{}(self);
+                                 }))...);
+            sync_wait(std::move(all));
+            self->_apply_command_buffers();
+            for (auto& cmdbuf : *self->command_buffers_) {
+                cmdbuf.reset();
+            }
         }
     };
 
+    // call system lists
     template <typename>
     struct _call_run_list;
     template <stage Stage, typename... SysList>
     struct _call_run_list<staged_type_list<Stage, SysList...>> {
-        template <typename Scheduler>
-        void operator()(Scheduler& scheduler, basic_world* self) {
-            (_call_system_list<SysList>{}(scheduler, self), ...);
+        template <neutron::execution::scheduler Sch>
+        void operator()(Sch& sch, basic_world* self) {
+            using namespace neutron;
+            using namespace neutron::execution;
+
+            using syslist = type_list<SysList...>;
+            [&]<size_t... Is>(std::index_sequence<Is...>) {
+                (_call<type_list_element_t<Is, syslist>>{}(sch, self), ...);
+            }(std::index_sequence_for<SysList...>());
         }
     };
 
-public:
-    template <typename Al = Alloc>
-    constexpr explicit basic_world(const Al& alloc = {})
-        : world_base<Alloc>(alloc), resources_(), locals_() {}
-
-    template <stage Stage, typename Scheduler>
-    void call(Scheduler& scheduler) {
-        using run_list = _get_systems<Stage>::type;
-        _call_run_list<run_list>{}(scheduler, this);
-        // _apply_commands();
-    }
-
-private:
     /// variables could be use in only one specific system
     /// Locals are _sys_tuple, a tuple with system info, used to get the correct
     /// local for each sys
@@ -131,9 +164,29 @@ private:
     // variables could be pass between each systems
     neutron::type_list_rebind_t<neutron::shared_tuple, resources> resources_;
 
-    // constexpr static auto components_hash =
-    // neutron::make_hash_array<components>();
+    _vector_t<command_buffer>* command_buffers_;
 };
+
+template <
+    stage Stage, neutron::execution::scheduler Sch, world World,
+    typename CmdBuf                     = World::command_buffer,
+    template <typename> typename Vector = World::template _vector_t>
+void call(Sch& sch, Vector<CmdBuf>& cmdbufs, World& world) {
+    world.template call<Stage>(sch, cmdbufs);
+}
+
+template <
+    stage Stage, neutron::execution::scheduler Sch, typename Alloc,
+    world... Worlds,
+    typename VectorAlloc =
+        neutron::rebind_alloc_t<Alloc, command_buffer<Alloc>>>
+void call(
+    Sch& sch, std::vector<command_buffer<Alloc>, VectorAlloc>& cmdbufs,
+    neutron::shared_tuple<Worlds...>& worlds) {
+    [&]<size_t... Is>(std::index_sequence<Is...>) {
+        (worlds.template get<Is>().template call<Stage>(sch, cmdbufs), ...);
+    }(std::index_sequence_for<Worlds...>());
+}
 
 template <stage Stage, world World, typename Scheduler>
 void call(World& world, Scheduler& scheduler) {
