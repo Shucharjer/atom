@@ -1,16 +1,18 @@
 #include "example_application.hpp"
 #include <chrono>
 #include <cstdint>
+#include <memory_resource>
 #include <string>
 #include <neutron/print.hpp>
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
+#include <proton/proton.hpp>
+
 #include <proton/args/common/commands.hpp>
 #include <proton/args/common/query.hpp>
 #include <proton/args/system/local.hpp>
 #include <proton/args/system/res.hpp>
 #include <proton/observer.hpp>
-#include <proton/proton.hpp>
 #include <proton/registry.hpp>
 #include <proton/run.hpp>
 #include <proton/stage.hpp>
@@ -18,6 +20,7 @@
 #include <proton/world.hpp>
 
 using namespace proton;
+using commands = basic_commands<std::pmr::polymorphic_allocator<>>;
 
 struct name {
     using component_concept = component_t;
@@ -107,6 +110,11 @@ constexpr auto world = world_desc
     ;
 // clang-format on
 
+int main(int argc, char* argv[]) {
+    myapp::create() | run_worlds<::world>();
+    return 0;
+}
+
 using reg   = registry<::world>;
 using _reg  = _registry<::world>;
 using syss  = reg::systems::all_systems;
@@ -118,11 +126,6 @@ using slist  = reg::system_list;
 using res_t  = reg::resources;
 using locals = reg::locals;
 using obses  = reg::observers;
-
-int main(int argc, char* argv[]) {
-    myapp::create() | run_worlds<::world>();
-    return 0;
-}
 
 void create_entities(commands commands) {}
 void update_time(res<timer&> res) {}

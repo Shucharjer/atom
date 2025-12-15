@@ -37,8 +37,12 @@ public:
 
         // make command buffers
 
+        using command_buffer_t = command_buffer<allocator_t>;
+        using _cmdbuf_allocator =
+            std::pmr::polymorphic_allocator<command_buffer_t>;
         const auto concurrency = thread_pool.available_parallelism();
-        std::vector<command_buffer<allocator_t>> command_buffers(concurrency);
+        std::pmr::vector<command_buffer_t> command_buffers(
+            concurrency, _cmdbuf_allocator{ alloc });
 
         // make worlds
 

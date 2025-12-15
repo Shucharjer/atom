@@ -17,6 +17,8 @@ using namespace neutron;
 using namespace execution;
 using namespace proton;
 
+using commands = basic_commands<>;
+
 void task1(commands);
 void task2(commands);
 void task3(commands);
@@ -28,13 +30,14 @@ constexpr auto world = world_desc | add_system<update, &task1> |
 
 int main() {
     exec::static_thread_pool pool;
-    std::vector<command_buffer<>> cbs(std::thread::hardware_concurrency());
+    std::vector<command_buffer<>> cmdbufs(pool.available_parallelism());
     scheduler auto sch = pool.get_scheduler();
 
     auto worlds = make_worlds<::world>();
 
     for (auto frame = 0; frame < 4; ++frame) {
-        call<update>(sch, cbs, worlds);
+        println("frame {}", frame);
+        call<update>(sch, cmdbufs, worlds);
     }
 
     return 0;
@@ -45,7 +48,8 @@ std::mutex mutex;
 void task1(commands cmds) {
     const auto tid = std::this_thread::get_id();
     std::ostringstream oss;
-    oss << "tid: " << tid << ", task1, cb: " << static_cast<void*>(&cmds)
+    oss << "tid: " << tid
+        << ", task1, cb: " << static_cast<void*>(cmds.get_command_buffer())
         << '\n';
     std::lock_guard guard{ mutex };
     std::cout << oss.str();
