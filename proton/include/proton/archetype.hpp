@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <memory_resource>
 #include <new>
 #include <tuple>
 #include <type_traits>
@@ -1172,4 +1173,17 @@ private:
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays)
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
+namespace pmr {
+
+using archetype = archetype<std::pmr::polymorphic_allocator<>>;
+
+}
+
 } // namespace proton
+
+namespace std {
+
+template <proton::_std_simple_allocator Alloc>
+struct uses_allocator<proton::archetype<Alloc>, Alloc> : std::true_type {};
+
+} // namespace std
