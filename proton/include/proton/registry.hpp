@@ -134,8 +134,7 @@ struct registry {
 template <
     auto... WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
 auto make_worlds(const Alloc& alloc = Alloc{}) {
-    return neutron::shared_tuple<basic_world<registry<WorldDesc>, Alloc>...>(
-        alloc);
+    return std::tuple<basic_world<registry<WorldDesc>, Alloc>...>(alloc);
 }
 
 } // namespace proton
