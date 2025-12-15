@@ -1,5 +1,6 @@
 #pragma once
 #include <concepts>
+#include <cstddef>
 #include <format>
 #include <memory>
 #include <type_traits>
@@ -184,10 +185,10 @@ private:
     index_t identity_;
 };
 
-template <auto Sys, typename Argument>
+template <auto Sys, typename Argument, size_t IndexOfSysInSysList = 0>
 struct construct_from_world_t {
     template <world World>
-    constexpr Argument operator()(World& world) {
+    constexpr Argument operator()(World& world) const {
         return Argument{ world };
     }
 };
@@ -195,15 +196,17 @@ struct construct_from_world_t {
 template <auto Descriptor>
 class registry;
 
-class commands;
+template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+class basic_commands;
 
-template <auto Sys, typename Arg>
-constexpr inline construct_from_world_t<Sys, Arg> construct_from_world;
+template <auto Sys, typename Arg, size_t IndexOfSysInSysList = 0>
+constexpr inline construct_from_world_t<Sys, Arg, IndexOfSysInSysList>
+    construct_from_world;
 
-template <auto Sys, typename Arg>
+template <auto Sys, typename Arg, size_t Index = 0>
 concept constructible_from_world = requires {
     {
-        construct_from_world<Sys, Arg>(
+        construct_from_world<Sys, Arg, Index>(
             std::declval<basic_world<registry<world_desc>>>())
     } -> std::same_as<Arg>;
 };
@@ -212,8 +215,7 @@ template <auto Sys, typename T = decltype(Sys)>
 constexpr inline bool _valid_system = false;
 template <auto Sys, typename Ret, typename... Args>
 constexpr inline bool _valid_system<Sys, Ret (*)(Args...)> =
-    (std::same_as<Ret, void> || std::same_as<Ret, commands>) &&
-    (constructible_from_world<Sys, Args> && ...);
+    std::same_as<Ret, void> && (constructible_from_world<Sys, Args> && ...);
 
 template <auto Sys>
 concept system = _valid_system<Sys>;

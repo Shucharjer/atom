@@ -21,7 +21,7 @@ namespace proton {
 
 template <_std_simple_allocator Alloc>
 class basic_world<registry<world_desc>, Alloc> : world_base<Alloc> {
-    template <auto Sys, typename Argument>
+    template <auto, typename, size_t>
     friend struct construct_from_world_t;
     friend struct world_accessor;
 
@@ -43,7 +43,7 @@ public:
 
 template <typename Registry, _std_simple_allocator Alloc>
 class basic_world : world_base<Alloc> {
-    template <auto Sys, typename Argument>
+    template <auto, typename, size_t>
     friend struct construct_from_world_t;
     friend struct world_accessor;
 
@@ -98,7 +98,7 @@ private:
     };
 
     // call a system with corresponding arguments
-    template <auto Sys>
+    template <size_t Index, auto Sys>
     struct _call_sys {
         using system_traits = _system_traits<decltype(Sys)>;
         using arg_list      = typename system_traits::arg_list;
@@ -108,7 +108,7 @@ private:
         struct call<Template<Args...>> {
             void operator()(basic_world* world) const
                 noexcept(system_traits::is_nothrow) {
-                Sys(construct_from_world<Sys, Args>(*world)...);
+                Sys(construct_from_world<Sys, Args, Index>(*world)...);
             }
         };
 
@@ -128,10 +128,15 @@ private:
     struct _call<Template<Systems...>> {
         template <typename Sch>
         void operator()(Sch& sch, basic_world* self) const noexcept {
+            using namespace neutron;
             using namespace neutron::execution;
-            auto all = when_all((schedule(sch) | then([self] {
-                                     _call_sys<Systems>{}(self);
-                                 }))...);
+            using slist = value_list<Systems...>;
+            auto all = [&sch, self]<size_t... Is>(std::index_sequence<Is...>) {
+                return when_all(
+                    (schedule(sch) | then([self] {
+                         _call_sys<Is, value_list_element_v<Is, slist>>{}(self);
+                     }))...);
+            }(std::index_sequence_for<value_list<Systems>...>());
             sync_wait(std::move(all));
             self->_apply_command_buffers();
             for (auto& cmdbuf : *self->command_buffers_) {
@@ -182,9 +187,9 @@ template <
         neutron::rebind_alloc_t<Alloc, command_buffer<Alloc>>>
 void call(
     Sch& sch, std::vector<command_buffer<Alloc>, VectorAlloc>& cmdbufs,
-    neutron::shared_tuple<Worlds...>& worlds) {
+    std::tuple<Worlds...>& worlds) {
     [&]<size_t... Is>(std::index_sequence<Is...>) {
-        (worlds.template get<Is>().template call<Stage>(sch, cmdbufs), ...);
+        (std::get<Is>(worlds).template call<Stage>(sch, cmdbufs), ...);
     }(std::index_sequence_for<Worlds...>());
 }
 
