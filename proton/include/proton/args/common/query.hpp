@@ -69,8 +69,8 @@ struct without {
         }
     };
 
-    constexpr void init(auto& archetypes) {
-        _impl<_without_t>::init(archetypes);
+    constexpr bool init(const auto& archetypes) {
+        return _impl<_without_t>::init(archetypes);
     }
     constexpr bool fetch(auto& out, const auto& archetype) { return true; }
 };
@@ -101,11 +101,11 @@ struct withany {
 template <component_like... Args>
 struct changed {
     using conflict_list = without<Args...>;
-    constexpr void init(auto& out, const auto& archetypes) {}
-    constexpr bool fetch(auto& out, const auto& archetype) {
-        static_assert(false);
+    template <typename Archetype>
+    constexpr bool init(const Archetype& archetype) {
         return true;
     }
+    constexpr bool fetch(auto& out, const auto& archetype) { return true; }
 };
 
 template <typename Ty>
@@ -130,6 +130,11 @@ template <typename Ty>
 struct _is_withany : neutron::is_specific_type_list<withany, Ty> {};
 template <typename Ty>
 constexpr auto _is_withany_v = _is_withany<Ty>::value;
+
+static_assert(query_filter<with<>>);
+static_assert(query_filter<without<>>);
+static_assert(query_filter<withany<>>);
+static_assert(query_filter<changed<>>);
 
 template <query_filter... Filters>
 class query<Filters...> {
