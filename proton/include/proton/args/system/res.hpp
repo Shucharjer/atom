@@ -14,7 +14,7 @@ struct res : public std::tuple<Resources...> {
     template <world World>
     res(World& world)
         : std::tuple<Resources...>(
-              neutron::get_first<std::remove_cvref_t<Resources>>(
+              neutron::rmcvref_first<std::remove_cvref_t<Resources>>(
                   world_accessor::resources(world))...) {}
 };
 
