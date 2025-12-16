@@ -11,17 +11,6 @@
 
 namespace proton {
 
-class _query_iterator {
-public:
-    _query_iterator();
-    _query_iterator& operator++();
-    _query_iterator operator++(int);
-    auto operator*();
-    auto operator->();
-
-private:
-};
-
 template <component_like...>
 struct with;
 template <component_like...>
