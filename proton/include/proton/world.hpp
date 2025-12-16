@@ -117,7 +117,7 @@ private:
 
     void _apply_command_buffers() noexcept {
         for (auto& cmdbuf : *command_buffers_) {
-            // iterate & apply cmd in the cmdbuf
+            cmdbuf.apply(_base());
         }
     }
 
@@ -131,6 +131,11 @@ private:
             using namespace neutron;
             using namespace neutron::execution;
             using slist = value_list<Systems...>;
+
+            for (auto& cmdbuf : *self->command_buffers_) {
+                cmdbuf.reset();
+            }
+
             auto all = [&sch, self]<size_t... Is>(std::index_sequence<Is...>) {
                 return when_all(
                     (schedule(sch) | then([self] {
@@ -139,9 +144,6 @@ private:
             }(std::index_sequence_for<value_list<Systems>...>());
             sync_wait(std::move(all));
             self->_apply_command_buffers();
-            for (auto& cmdbuf : *self->command_buffers_) {
-                cmdbuf.reset();
-            }
         }
     };
 
@@ -193,30 +195,36 @@ void call(
     }(std::index_sequence_for<Worlds...>());
 }
 
-template <stage Stage, world World, typename Scheduler>
-void call(World& world, Scheduler& scheduler) {
-    world.template call<Stage>(scheduler);
+void call_startup(
+    neutron::execution::scheduler auto& sch, auto& cmdbufs, world auto& world) {
+    call<stage::pre_startup>(sch, cmdbufs, world);
+    call<stage::startup>(sch, cmdbufs, world);
+    call<stage::post_startup>(sch, cmdbufs, world);
 }
 
-template <stage Stage, world... Worlds, typename Scheduler>
-void call(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
-    [&worlds, &scheduler]<size_t... Is>(std::index_sequence<Is...>) {
-        (std::get<Is>(worlds).template call<Stage>(scheduler), ...);
-    }(std::index_sequence_for<Worlds...>());
+template <world... Worlds>
+void call_startup(
+    neutron::execution::scheduler auto& sch, auto& cmdbufs,
+    std::tuple<Worlds...>& worlds) {
+    call<stage::pre_startup>(sch, cmdbufs, worlds);
+    call<stage::startup>(sch, cmdbufs, worlds);
+    call<stage::post_startup>(sch, cmdbufs, worlds);
 }
 
-template <world... Worlds, typename Scheduler>
-void call_startup(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
-    call<stage::pre_startup>(worlds, scheduler);
-    call<stage::startup>(worlds, scheduler);
-    call<stage::post_startup>(worlds, scheduler);
+void call_update(
+    neutron::execution::scheduler auto& sch, auto& cmdbufs, world auto& world) {
+    call<stage::pre_update>(sch, cmdbufs, world);
+    call<stage::update>(sch, cmdbufs, world);
+    call<stage::post_update>(sch, cmdbufs, world);
 }
 
-template <world... Worlds, typename Scheduler>
-void call_update(std::tuple<Worlds...>& worlds, Scheduler& scheduler) {
-    call<stage::pre_update>(worlds, scheduler);
-    call<stage::update>(worlds, scheduler);
-    call<stage::post_update>(worlds, scheduler);
+template <world... Worlds>
+void call_update(
+    neutron::execution::scheduler auto& sch, auto& cmdbufs,
+    std::tuple<Worlds...>& worlds) {
+    call<stage::pre_update>(sch, cmdbufs, worlds);
+    call<stage::update>(sch, cmdbufs, worlds);
+    call<stage::post_update>(sch, cmdbufs, worlds);
 }
 
 } // namespace proton
