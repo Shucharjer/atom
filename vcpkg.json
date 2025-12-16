@@ -1,13 +1,17 @@
 {
     "name": "electron",
     "dependencies": [
+        "stdexec",
         "glm",
         "imgui",
-        "vulkan",
+        "vulkan-headers",
+        "vulkan-hpp",
+        "vulkan-loader",
+        "vulkan-memory-allocator",
+        "vulkan-memory-allocator-hpp",
         {
             "name": "sdl3",
             "features": ["vulkan"]
-        },
-        "stdexec"
+        }
     ]
 }
