@@ -6,10 +6,12 @@
 #include <functional>
 #include <memory>
 #include <queue>
+#include <type_traits>
 #include <utility>
 #include <vector>
 #include <neutron/memory.hpp>
 #include <neutron/shift_map.hpp>
+#include "neutron/template_list.hpp"
 #include "neutron/type_hash.hpp"
 #include "proton/archetype.hpp"
 
@@ -18,6 +20,7 @@ namespace proton {
 struct world_accessor;
 
 namespace _world_base {
+
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
 class world_base {
     template <typename, _std_simple_allocator>
@@ -68,9 +71,9 @@ public:
 
 private:
     constexpr entity_t _get_new_entity();
-    template <typename... Components>
+    template <component... Components>
     constexpr void _emplace_new_entity(entity_t entity);
-    template <typename... Components>
+    template <component... Components>
     constexpr void _emplace_new_entity(entity_t entity, Components&&...);
 
     NODISCARD constexpr entity_t
@@ -114,8 +117,23 @@ constexpr entity_t world_base<Alloc>::spawn() {
 }
 
 template <_std_simple_allocator Alloc>
-template <typename... Components>
-constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity) {}
+template <component... Components>
+constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity) {
+    using namespace neutron;
+    using list              = type_list<std::remove_cvref_t<Components>...>;
+    constexpr uint64_t hash = make_array_hash<list>();
+
+    auto iter = archetypes_.find(hash);
+    if (iter != archetypes_.end()) {
+        iter->second.emplace(entity);
+        entities_.try_emplace(entity, &iter->second);
+    } else {
+        auto [iter, _] = archetypes_.try_emplace(
+            hash, archetype{ spread_type<Components...> });
+        iter->second.emplace(entity);
+        entities_.try_emplace(entity, &iter->second);
+    }
+}
 
 template <_std_simple_allocator Alloc>
 template <component... Components>
@@ -125,6 +143,26 @@ constexpr entity_t world_base<Alloc>::spawn() {
     const auto entity = _get_new_entity();
     _emplace_new_entity<Components...>(entity);
     return entity;
+}
+
+template <_std_simple_allocator Alloc>
+template <component... Components>
+constexpr void world_base<Alloc>::_emplace_new_entity(
+    entity_t entity, Components&&... components) {
+    using namespace neutron;
+    using list              = type_list<std::remove_cvref_t<Components>...>;
+    constexpr uint64_t hash = make_array_hash<list>();
+
+    auto iter = archetypes_.find(hash);
+    if (iter != archetypes_.end()) [[likely]] {
+        iter->second.emplace(entity, std::forward<Components>(components)...);
+        entities_.try_emplace(entity, &iter->second);
+    } else [[unlikely]] {
+        auto [iter, _] = archetypes_.try_emplace(
+            hash, archetype{ spread_type<std::remove_cvref_t<Components>...> });
+        iter->second.emplace(entity, std::forward<Components>(components)...);
+        entities_.try_emplace(entity, &iter->second);
+    }
 }
 
 template <_std_simple_allocator Alloc>
