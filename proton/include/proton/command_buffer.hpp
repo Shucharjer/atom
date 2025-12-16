@@ -39,60 +39,109 @@ public:
     }
 
     constexpr future_entity_t spawn() noexcept {
-        return future_entity_t{ inframe_index_++ };
+        auto fut = future_entity_t{ inframe_index_++ };
+        commands_.emplace_back(
+            [fut](_world_base& world, _vector_t<entity_t>& future_map) {
+                future_map[fut.get()] = world.spawn();
+            });
+        return fut;
     }
 
     template <component... Components>
     requires(std::same_as<Components, std::remove_cvref_t<Components>> && ...)
     future_entity_t spawn() {
         const auto fut = future_entity_t{ inframe_index_++ };
-        //
+        commands_.emplace_back(
+            [fut](_world_base& world, _vector_t<entity_t>& future_map) {
+                future_map[fut.get()] = world.template spawn<Components...>();
+            });
         return fut;
     }
 
     template <component... Components>
     future_entity_t spawn(Components&&... components) {
         const auto fut = future_entity_t{ inframe_index_++ };
-        //
+        commands_.emplace_back(
+            [fut, &components...](
+                _world_base& world, _vector_t<entity_t>& future_map) {
+                future_map[fut.get()] =
+                    world.spawn(std::forward<Components>(components)...);
+            });
         return fut;
     }
 
     template <component... Components>
-    void add_components(future_entity_t entity);
+    void add_components(future_entity_t entity) {
+        commands_.emplace_back(
+            [entity](_world_base& world, _vector_t<entity_t>& future_map) {
+                const entity_t ntt = future_map[entity.get()];
+                world.template add_components<Components...>(ntt);
+            });
+    }
 
     template <component... Components>
     void add_components(entity_t entity) {
-        commands_.emplace_back([entity](_world_base& world) {
-            world.template add_components<Components...>(entity);
-        });
+        commands_.emplace_back(
+            [entity](
+                _world_base& world, [[maybe_unused]] _vector_t<entity_t>&) {
+                world.template add_components<Components...>(entity);
+            });
     }
 
     template <component... Components>
-    void add_components(future_entity_t entity, Components&&... comopnents);
+    void add_components(future_entity_t entity, Components&&... comopnents) {
+        commands_.emplace_back([entity, &comopnents...](
+                                   _world_base& world,
+                                   _vector_t<entity_t>& future_map) {
+            const entity_t ntt = future_map[entity.get()];
+            world.add_components(ntt, std::forward<Components>(comopnents)...);
+        });
+    }
 
     template <component... Components>
     void add_components(entity_t entity, Components&&... components) {
-        commands_.emplace_back([entity, &components...](_world_base& world) {
-            world.add_components(
-                entity, std::forward<Components>(components)...);
-        });
+        commands_.emplace_back(
+            [entity, &components...](
+                _world_base& world, [[maybe_unused]] _vector_t<entity_t>&) {
+                world.add_components(
+                    entity, std::forward<Components>(components)...);
+            });
     }
 
     template <component... Components>
-    void remove_components(future_entity_t entity);
+    void remove_components(future_entity_t entity) {
+        commands_.emplace_back(
+            [entity](_world_base& world, _vector_t<entity_t>& future_map) {
+                const entity_t ntt = future_map[entity.get()];
+                world.template remove_components<Components...>(ntt);
+            });
+    }
 
     template <component... Components>
     void remove_components(entity_t entity) {
-        commands_.emplace_back([entity](_world_base& world) {
-            world.template remove_components<Components...>(entity);
-        });
+        commands_.emplace_back(
+            [entity](
+                _world_base& world, [[maybe_unused]] _vector_t<entity_t>&) {
+                world.template remove_components<Components...>(entity);
+            });
     }
 
-    void kill(future_entity_t entity);
+    void kill(future_entity_t entity) {
+        commands_.emplace_back(
+            [entity](
+                _world_base& world, _vector_t<entity_t>& future_map) noexcept {
+                const entity_t ntt = future_map[entity.get()];
+                world.kill(ntt);
+            });
+    }
 
     void kill(entity_t entity) {
         commands_.emplace_back(
-            [entity](_world_base& world) { world.kill(entity); });
+            [entity](
+                _world_base& world,
+                [[maybe_unused]] _vector_t<entity_t>&) noexcept {
+                world.kill(entity);
+            });
     }
 
     void apply(world_base<Alloc>& world) {
@@ -100,13 +149,14 @@ public:
             inframe_index_, commands_.get_allocator());
 
         for (auto& cmd : commands_) {
-            cmd(world);
+            cmd(world, future_map);
         }
     }
 
 private:
     index_t inframe_index_{};
-    _vector_t<std::function<void(world_base<Alloc>&)>> commands_;
+    _vector_t<std::function<void(_world_base&, _vector_t<entity_t>&)>>
+        commands_;
 };
 
 } // namespace proton
