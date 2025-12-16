@@ -1,8 +1,6 @@
-#include <cstddef>
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <exec/static_thread_pool.hpp>
 #include <neutron/execution.hpp>
 #include <neutron/print.hpp>
@@ -49,7 +47,7 @@ int main() {
 
 std::mutex mutex;
 
-void task1(commands cmds) { cmds.spawn<std::string>(std::string{ "t1" }); }
+void task1(commands cmds) { cmds.spawn(std::string{ "t1" }); }
 void task2(commands cmds, query<with<std::string&>> query) {
     for (auto [string] : query.get()) {
         string = "t2";
