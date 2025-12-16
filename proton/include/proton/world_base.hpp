@@ -168,8 +168,8 @@ constexpr void world_base<Alloc>::_emplace_new_entity(
 template <_std_simple_allocator Alloc>
 template <component... Components>
 constexpr entity_t world_base<Alloc>::spawn(Components&&... components) {
-    constexpr uint64_t hash =
-        neutron::make_array_hash<neutron::type_list<Components...>>();
+    constexpr uint64_t hash = neutron::make_array_hash<
+        neutron::type_list<std::remove_cvref_t<Components>...>>();
     const auto entity = _get_new_entity();
     _emplace_new_entity(entity, std::forward<Components>(components)...);
     return entity;
@@ -178,8 +178,8 @@ constexpr entity_t world_base<Alloc>::spawn(Components&&... components) {
 template <_std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::add_components(entity_t entity) {
-    constexpr uint64_t hash =
-        neutron::make_array_hash<neutron::type_list<Components...>>();
+    constexpr uint64_t hash = neutron::make_array_hash<
+        neutron::type_list<std::remove_cvref_t<Components>...>>();
     if (entities_.at(entity) == nullptr) {
         _emplace_new_entity<Components...>(entity);
         return;
