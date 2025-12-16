@@ -90,7 +90,8 @@ concept component =
         typename std::remove_cvref_t<Ty>::component_concept;
         requires std::derived_from<
             typename std::remove_cvref_t<Ty>::component_concept, component_t>;
-    } || as_component<std::remove_cvref_t<Ty>>) && std::destructible<Ty>;
+    } || as_component<std::remove_cvref_t<Ty>>) && std::movable<Ty> &&
+    std::destructible<Ty>;
 
 /*! @cond TURN_OFF_DOXYGEN */
 namespace internal {
@@ -175,6 +176,7 @@ using index_t      = uint32_t;
  * It mainly used in command_buffer.
  */
 class future_entity_t {
+
 public:
     constexpr explicit future_entity_t(index_t inframe_index)
         : identity_(inframe_index) {}
