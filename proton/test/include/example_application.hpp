@@ -1,15 +1,17 @@
 #pragma once
 #include <cstddef>
 #include <memory_resource>
-#include <thread>
 #include <tuple>
 #include <vector>
 #include <exec/static_thread_pool.hpp>
+#include <proton/args/common/commands.hpp>
 #include <proton/registry.hpp>
 #include "neutron/execution.hpp"
 #include "proton/command_buffer.hpp"
 #include "proton/stage.hpp"
 #include "proton/world.hpp"
+
+using commands = proton::basic_commands<std::pmr::polymorphic_allocator<>>;
 
 class myapp {
 public:

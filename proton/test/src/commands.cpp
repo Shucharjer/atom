@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <mutex>
 #include <sstream>
+#include <string>
 #include <thread>
 #include <exec/static_thread_pool.hpp>
 #include <neutron/execution.hpp>
@@ -19,13 +20,16 @@ using namespace proton;
 
 using commands = basic_commands<>;
 
-void task1(commands);
-void task2(commands);
-void task3(commands);
+template <>
+constexpr bool as_component<std::string> = true;
+
+void task1(commands cmds);
+void task2(commands cmds, query<with<std::string&>> query);
+void task3(commands cmds, query<with<const std::string&>> query);
 
 using enum stage;
 constexpr auto world = world_desc | add_system<update, &task1> |
-                       add_system<update, &task2> |
+                       add_system<update, &task2, before<task1>> |
                        add_system<update, &task3, after<task2>>;
 
 int main() {
@@ -45,28 +49,17 @@ int main() {
 
 std::mutex mutex;
 
-void task1(commands cmds) {
-    const auto tid = std::this_thread::get_id();
-    std::ostringstream oss;
-    oss << "tid: " << tid
-        << ", task1, cb: " << static_cast<void*>(cmds.get_command_buffer())
-        << '\n';
-    std::lock_guard guard{ mutex };
-    std::cout << oss.str();
+void task1(commands cmds) { cmds.spawn<std::string>(std::string{ "t1" }); }
+void task2(commands cmds, query<with<std::string&>> query) {
+    for (auto [string] : query.get()) {
+        string = "t2";
+    }
 }
-void task2(commands cmds) {
-    const auto tid = std::this_thread::get_id();
+void task3(commands cmds, query<with<const std::string&>> query) {
     std::ostringstream oss;
-    oss << "tid: " << tid << ", task2, cb: " << static_cast<void*>(&cmds)
-        << '\n';
-    std::lock_guard guard{ mutex };
-    std::cout << oss.str();
-}
-void task3(commands cmds) {
-    const auto tid = std::this_thread::get_id();
-    std::ostringstream oss;
-    oss << "tid: " << tid << ", task3, cb: " << static_cast<void*>(&cmds)
-        << '\n';
+    for (auto [string] : query.get()) {
+        oss << "string: " << string << '\n';
+    }
     std::lock_guard guard{ mutex };
     std::cout << oss.str();
 }

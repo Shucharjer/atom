@@ -1,18 +1,16 @@
 #include "example_application.hpp"
 #include <chrono>
 #include <cstdint>
-#include <memory_resource>
 #include <string>
 #include <neutron/print.hpp>
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
-#include <proton/proton.hpp>
-
 #include <proton/args/common/commands.hpp>
 #include <proton/args/common/query.hpp>
 #include <proton/args/system/local.hpp>
 #include <proton/args/system/res.hpp>
 #include <proton/observer.hpp>
+#include <proton/proton.hpp>
 #include <proton/registry.hpp>
 #include <proton/run.hpp>
 #include <proton/stage.hpp>
@@ -20,7 +18,6 @@
 #include <proton/world.hpp>
 
 using namespace proton;
-using commands = basic_commands<std::pmr::polymorphic_allocator<>>;
 
 struct name {
     using component_concept = component_t;
@@ -106,7 +103,6 @@ constexpr auto world = world_desc
     | add_system<render, render_objs>
     | add_system<post_update, modify_game_state>
     | add_system<post_update, echo_entities, after<modify_game_state>>
-    // | add_observer<update, observer>
     ;
 // clang-format on
 
@@ -115,12 +111,11 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-using reg   = registry<::world>;
-using _reg  = _registry<::world>;
-using syss  = reg::systems::all_systems;
-using qrys  = _reg::querys;
-using comps = reg::components;
-// using comps  = reg::components;
+using reg    = registry<::world>;
+using areg   = _registry<::world>;
+using syss   = reg::systems::all_systems;
+using qrys   = areg::querys;
+using comps  = reg::components;
 using psdsys = reg::systems;
 using slist  = reg::system_list;
 using res_t  = reg::resources;
@@ -141,17 +136,17 @@ void movement(
     //
 }
 void update_position(query<with<position&, direction>> qry) {
-    // std::array update_x = { -1, 0, 1, 0 };
-    // std::array update_y = { 0, 1, 0, -1 };
-    // for (auto [pos, dir] : qry.get()) {
-    //     pos.x += update_x[dir];
-    //     pos.y += update_y[dir];
-    // }
+    std::array update_x = { -1, 0, 1, 0 };
+    std::array update_y = { 0, 1, 0, -1 };
+    for (auto [pos, dir] : qry.get()) {
+        pos.x += update_x[dir.value];
+        pos.y += update_y[dir.value];
+    }
 }
 void echo_position(query<with<position>> qry) {
-    // for (auto pos : qry.get<position>()) {
-    //     neutron::println("{}", pos);
-    // }
+    for (auto [pos] : qry.get()) {
+        neutron::println("pos: {}, {}", pos.x, pos.y);
+    }
 }
 void render_objs(
     query<with<const transform&, sprite>> qry, local<sprite_manager> local,
