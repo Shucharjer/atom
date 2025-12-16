@@ -51,12 +51,12 @@ template <>
 constexpr bool as_component<direction> = true;
 
 struct keyboard {
-    using resouce_concept = resource_t;
+    using resource_concept = resource_t;
     // ...
 };
 template <typename O>
 struct input : O {
-    using resource_concept = typename O::resouce_concept;
+    using resource_concept = typename O::resource_concept;
 };
 ```
 
