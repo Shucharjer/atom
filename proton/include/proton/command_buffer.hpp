@@ -62,10 +62,9 @@ public:
     future_entity_t spawn(Components&&... components) {
         const auto fut = future_entity_t{ inframe_index_++ };
         commands_.emplace_back(
-            [fut, &components...](
+            [fut, ... comps = std::forward<Components>(components)](
                 _world_base& world, _vector_t<entity_t>& future_map) {
-                future_map[fut.get()] =
-                    world.spawn(std::forward<Components>(components)...);
+                future_map[fut.get()] = world.spawn(std::move(comps)...);
             });
         return fut;
     }
@@ -90,21 +89,20 @@ public:
 
     template <component... Components>
     void add_components(future_entity_t entity, Components&&... comopnents) {
-        commands_.emplace_back([entity, &comopnents...](
-                                   _world_base& world,
-                                   _vector_t<entity_t>& future_map) {
-            const entity_t ntt = future_map[entity.get()];
-            world.add_components(ntt, std::forward<Components>(comopnents)...);
-        });
+        commands_.emplace_back(
+            [entity, ... comps = std::forward<Components>(comopnents)](
+                _world_base& world, _vector_t<entity_t>& future_map) {
+                const entity_t ntt = future_map[entity.get()];
+                world.add_components(ntt, std::move(comps)...);
+            });
     }
 
     template <component... Components>
     void add_components(entity_t entity, Components&&... components) {
         commands_.emplace_back(
-            [entity, &components...](
+            [entity, ... comps = std::forward<Components>(components)](
                 _world_base& world, [[maybe_unused]] _vector_t<entity_t>&) {
-                world.add_components(
-                    entity, std::forward<Components>(components)...);
+                world.add_components(entity, std::move(comps)...);
             });
     }
 
