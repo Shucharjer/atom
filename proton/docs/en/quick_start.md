@@ -14,14 +14,13 @@ resolved at compile time.
 
 ## Key Features
 
--   Zero-runtime-overhead. No virtual dispatch, no heap allocations for system
-dispatch.  
+-   Zero-runtime-overhead. Avoid virtual dispatch, no heap allocations for
+system dispatch.  
 -   Compile-time world & schedule construction. Entire execution list is 
 generated at compile time.
 -   Declarative scheduling. Express dependencies (`before`, `after`) directly
 in system registration.
--   Support for async worlds. Run multiple worlds concurrently with shared or 
-independent state.
+-   Parallelism support: built-in `execution` and command buffer support.
 -   DSL-based ergonomic API. Write systems as natural C++ functions, which
 means no boierplate.  
 
