@@ -55,9 +55,9 @@ public:
             entity);
     }
 
-    void kill(future_entity_t entity);
+    void kill(future_entity_t entity) { command_buffer_->kill(entity); }
 
-    void kill(entity_t entity);
+    void kill(entity_t entity) { return command_buffer_->kill(entity); }
 
     command_buffer<Alloc>* get_command_buffer() const noexcept {
         return command_buffer_;
