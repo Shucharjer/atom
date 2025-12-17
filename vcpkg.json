@@ -4,11 +4,16 @@
         "stdexec",
         "glm",
         "imgui",
+        "vulkan",
         "vulkan-headers",
         "vulkan-hpp",
         "vulkan-loader",
         "vulkan-memory-allocator",
         "vulkan-memory-allocator-hpp",
+        {
+            "name": "sdl2",
+            "features": ["vulkan"]
+        },
         {
             "name": "sdl3",
             "features": ["vulkan"]
