@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <memory>
 #include <type_traits>
 #include <neutron/template_list.hpp>
@@ -8,6 +9,7 @@
 #include "proton/args/system/local.hpp"
 #include "proton/args/system/res.hpp"
 #include "proton/observer.hpp"
+#include "proton/proton.hpp"
 #include "proton/stage.hpp"
 #include "proton/system.hpp"
 
@@ -130,6 +132,12 @@ struct registry {
     using locals      = _registry<Desc>::locals;
     using resources   = _registry<Desc>::resources;
 };
+
+template <
+    auto WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
+auto make_world(const Alloc& alloc = {}) {
+    return basic_world<registry<WorldDesc>, Alloc>(alloc);
+}
 
 template <
     auto... WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
