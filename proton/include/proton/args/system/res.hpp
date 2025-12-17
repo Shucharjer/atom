@@ -8,8 +8,7 @@
 
 namespace proton {
 
-template <typename... Resources>
-requires(resource_like<std::remove_cvref_t<Resources>> && ...)
+template <resource_like... Resources>
 struct res : public std::tuple<Resources...> {
     template <world World>
     res(World& world)
