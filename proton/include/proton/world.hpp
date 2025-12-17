@@ -10,7 +10,6 @@
 #include <neutron/shared_tuple.hpp>
 #include <neutron/shift_map.hpp>
 #include <neutron/type_hash.hpp>
-#include "proton.hpp"
 #include "proton/command_buffer.hpp"
 #include "proton/registry.hpp"
 #include "proton/stage.hpp"
