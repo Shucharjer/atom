@@ -311,9 +311,12 @@ class alignas(std::hardware_destructive_interference_size) command_buffer {
     using _unique_ptr = std::unique_ptr<std::byte[], _ptr_deletor>; // NOLINT
 
 public:
+    using allocator_type = Alloc;
+
     template <typename Al = Alloc>
     CONSTEXPR23 command_buffer(const Al& alloc = {})
-        : commands_(alloc), buffers_(alloc) {
+        : commands_(_allocator_t<_command_base>{ alloc }),
+          buffers_(_allocator_t<_unique_ptr>{ alloc }) {
         auto* const ptr =
             static_cast<std::byte*>(::operator new(block_size, default_align));
         buffers_.emplace_back(ptr, _ptr_deletor{});
@@ -679,3 +682,11 @@ private:
 #endif
 
 } // namespace proton
+
+namespace std {
+
+template <typename Alloc>
+struct uses_allocator<proton::_command_buffer::command_buffer<Alloc>, Alloc> :
+    std::true_type {};
+
+} // namespace std
