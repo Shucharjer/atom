@@ -42,6 +42,13 @@ public:
         void (*destroy)(void*)) noexcept
         : command_(cmd), destroy_(destroy) {}
 
+    _command_base(const _command_base&)            = delete;
+    _command_base& operator=(const _command_base&) = delete;
+    _command_base(_command_base&&)                 = delete;
+    _command_base& operator=(_command_base&&)      = delete;
+
+    ~_command_base() noexcept = default;
+
     void operator()(
         world_base<Alloc>& world,
         [[maybe_unused]] _vector_t<entity_t>& future_map) {
@@ -56,302 +63,225 @@ private:
     void (*destroy_)(void* ptr);
 };
 
+template <typename Derived, typename Alloc>
+class _command_impl_base : _command_base<Alloc> {
+public:
+    using future_map_t = typename _command_base<Alloc>::future_map_t;
+    _command_impl_base() noexcept : _command_base<Alloc>(&_invoke, &_destroy) {}
+
+private:
+    static void _invoke(
+        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
+        static_cast<Derived*>(payload)->invoke(world, future_map);
+    }
+
+    static void _destroy(void* payload) noexcept(
+        std::is_nothrow_destructible_v<Derived>) {
+        static_cast<Derived*>(payload)->~Derived();
+    }
+};
+
 template <typename Alloc>
-class _spawn : _command_base<Alloc> {
+class _spawn : _command_impl_base<_spawn<Alloc>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    constexpr _spawn(future_entity_t fut) noexcept
-        : _command_base<Alloc>(&_invoke, &_destroy), fut_(fut) {}
+    constexpr _spawn(future_entity_t fut) noexcept : fut_(fut) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world,
-        [[maybe_unused]] future_map_t& future_map) {
-        auto* const self             = static_cast<_spawn*>(payload);
-        future_map[self->fut_.get()] = world.spawn();
+    void invoke(
+        world_base<Alloc>& world, [[maybe_unused]] future_map_t& future_map) {
+        future_map[fut_.get()] = world.spawn();
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     future_entity_t fut_;
 };
 
 template <typename Alloc, component... Components>
-class _spawn_with_comps : _command_base<Alloc> {
+class _spawn_with_comps :
+    _command_impl_base<_spawn_with_comps<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    constexpr _spawn_with_comps(future_entity_t fut) noexcept
-        : _command_base<Alloc>(&_invoke, &_destroy), fut_(fut) {}
+    constexpr _spawn_with_comps(future_entity_t fut) noexcept : fut_(fut) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world,
-        [[maybe_unused]] future_map_t& future_map) {
-        auto* const self             = static_cast<_spawn_with_comps*>(payload);
-        future_map[self->fut_.get()] = world.template spawn<Components...>();
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        future_map[fut_.get()] = world.template spawn<Components...>();
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     future_entity_t fut_;
 };
 
 template <typename Alloc, component... Components>
-class _spawn_with_value : _command_base<Alloc> {
+class _spawn_with_value :
+    _command_impl_base<_spawn_with_value<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
     template <typename... Comps>
     _spawn_with_value(future_entity_t fut, Comps&&... comps) noexcept
-        : _command_base<Alloc>(&_invoke, &_destroy), fut_(fut),
-          comps_(std::forward<Comps>(comps)...) {}
+        : fut_(fut), comps_(std::forward<Comps>(comps)...) {}
 
-    _spawn_with_value(const _spawn_with_value&)            = delete;
-    _spawn_with_value& operator=(const _spawn_with_value&) = delete;
-
-    _spawn_with_value(_spawn_with_value&& that) noexcept(
-        (std::is_nothrow_move_constructible_v<Components> && ...))
-        : fut_(that.fut_), comps_(std::move(that.comps_)) {}
-
-    _spawn_with_value& operator=(_spawn_with_value&&) = delete;
-
-    ~_spawn_with_value() noexcept(
-        (std::is_nothrow_destructible_v<Components> && ...)) = default;
-
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world,
-        [[maybe_unused]] future_map_t& future_map) {
-        auto* const self             = static_cast<_spawn_with_value*>(payload);
-        future_map[self->fut_.get()] = std::apply(
+    void invoke(
+        world_base<Alloc>& world, [[maybe_unused]] future_map_t& future_map) {
+        future_map[fut_.get()] = std::apply(
             [&world](auto&&... comps) {
                 return world.spawn(std::forward<decltype(comps)>(comps)...);
             },
-            std::move(self->comps_));
+            std::move(comps_));
     }
 
-    static void _destroy(void* ptr) noexcept(
-        (std::is_nothrow_destructible_v<Components> && ...)) {
-        static_cast<_spawn_with_value*>(ptr)->~_spawn_with_value();
-    }
-
+private:
     future_entity_t fut_;
     std::tuple<Components...> comps_;
 };
 
 template <typename Alloc, component... Components>
-class _add_comps_for_fut : _command_base<Alloc> {
+class _add_comps_for_fut :
+    _command_impl_base<_add_comps_for_fut<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    constexpr _add_comps_for_fut(future_entity_t fut)
-        : _command_base<Alloc>(&_invoke, &_destroy), fut_(fut) {}
+    constexpr _add_comps_for_fut(future_entity_t fut) : fut_(fut) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self  = static_cast<_add_comps_for_fut*>(payload);
-        const auto entity = self->fut_.get();
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        const auto entity = fut_.get();
         world.template add_components<Components...>(entity);
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     future_entity_t fut_;
 };
 
 template <typename Alloc, component... Components>
-class _add_comps : _command_base<Alloc> {
+class _add_comps : _command_impl_base<_add_comps<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    constexpr _add_comps(entity_t entity)
-        : _command_base<Alloc>(&_invoke, &_destroy), entity_(entity) {}
+    constexpr _add_comps(entity_t entity) : entity_(entity) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self = static_cast<_add_comps*>(payload);
-        world.template add_components<Components...>(self->entity);
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        world.template add_components<Components...>(entity_);
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     entity_t entity_;
 };
 
 template <typename Alloc, component... Components>
-class _add_comps_for_fut_with_value : _command_base<Alloc> {
+class _add_comps_for_fut_with_value :
+    _command_impl_base<
+        _add_comps_for_fut_with_value<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
     template <component... Comps>
     constexpr _add_comps_for_fut_with_value(
         future_entity_t fut, Comps&&... components)
-        : _command_base<Alloc>(&_invoke, &_destroy), fut_(fut),
-          comps_(std::forward<Comps>(components)...) {}
+        : fut_(fut), comps_(std::forward<Comps>(components)...) {}
 
-    _add_comps_for_fut_with_value(const _add_comps_for_fut_with_value&) =
-        delete;
-    _add_comps_for_fut_with_value&
-        operator=(const _add_comps_for_fut_with_value&) = delete;
-
-    _add_comps_for_fut_with_value(_add_comps_for_fut_with_value&& that) noexcept(
-        (std::is_nothrow_move_constructible_v<Components> && ...))
-        : fut_(that.fut_), comps_(std::move(that.comps_)) {}
-
-    _add_comps_for_fut_with_value&
-        operator=(_add_comps_for_fut_with_value&&) = delete;
-
-    ~_add_comps_for_fut_with_value() noexcept(
-        (std::is_nothrow_destructible_v<Components> && ...)) = default;
-
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self = static_cast<_add_comps_for_fut_with_value*>(payload);
-        const auto entity = self->fut_.get();
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        const auto entity = fut_.get();
         std::apply(
             [entity, &world](auto&&... comps) {
                 world.add_components(
                     entity, std::forward<decltype(comps)>(comps)...);
             },
-            std::move(self->comps_));
+            std::move(comps_));
     }
 
-    static void _destroy(void* ptr) noexcept {
-        static_cast<_add_comps_for_fut_with_value*>(ptr)
-            ->~_add_comps_for_fut_with_value();
-    }
-
+private:
     future_entity_t fut_;
     std::tuple<Components...> comps_;
 };
 
 template <typename Alloc, component... Components>
-class _add_comps_with_value : _command_base<Alloc> {
+class _add_comps_with_value :
+    _command_impl_base<_add_comps_with_value<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
     template <component... Comps>
     constexpr _add_comps_with_value(entity_t entity, Comps&&... components)
-        : _command_base<Alloc>(&_invoke), entity_(entity),
-          comps_(std::forward<Comps>(components)...) {}
+        : entity_(entity), comps_(std::forward<Comps>(components)...) {}
 
-    _add_comps_with_value(const _add_comps_with_value&)            = delete;
-    _add_comps_with_value& operator=(const _add_comps_with_value&) = delete;
-
-    _add_comps_with_value(_add_comps_with_value&& that) noexcept(
-        (std::is_nothrow_move_constructible_v<Components> && ...))
-        : entity_(that.entity_), comps_(std::move(that.comps_)) {}
-
-    _add_comps_with_value& operator=(_add_comps_with_value&&) = delete;
-
-    ~_add_comps_with_value() noexcept(
-        (std::is_nothrow_destructible_v<Components> && ...)) = default;
-
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self  = static_cast<_add_comps_with_value*>(payload);
-        const auto entity = self->entity_;
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        const auto entity = entity_;
         std::apply(
             [entity, &world](auto&&... comps) {
                 world.add_components(
                     entity, std::forward<decltype(comps)>(comps)...);
             },
-            std::move(self->comps_));
+            std::move(comps_));
     }
 
-    static void _destroy(void* ptr) noexcept {
-        static_cast<_add_comps_with_value*>(ptr)->~_add_comps_with_value();
-    }
-
+private:
     entity_t entity_;
     std::tuple<Components...> comps_;
 };
 
 template <typename Alloc, component... Components>
-class _remove_comps_for_fut : _command_base<Alloc> {
+class _remove_comps_for_fut :
+    _command_impl_base<_remove_comps_for_fut<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    _remove_comps_for_fut(future_entity_t fut) noexcept
-        : _command_base<Alloc>(&_invoke, &_destroy), fut_(fut) {}
+    _remove_comps_for_fut(future_entity_t fut) noexcept : fut_(fut) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self  = static_cast<_remove_comps_for_fut*>(payload);
-        const auto entity = future_map[self->fut_.get()];
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        const auto entity = future_map[fut_.get()];
         world.template remove_components<Components...>(entity);
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     future_entity_t fut_;
 };
 
 template <typename Alloc, component... Components>
-class _remove_comps : _command_base<Alloc> {
+class _remove_comps :
+    _command_impl_base<_remove_comps<Alloc, Components...>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    _remove_comps(entity_t entity) noexcept
-        : _command_base<Alloc>(&_invoke, &_destroy), entity_(entity) {}
+    _remove_comps(entity_t entity) noexcept : entity_(entity) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self = static_cast<_remove_comps*>(payload);
-        world.template remove_components<Components...>(self->entity_);
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        world.template remove_components<Components...>(entity_);
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     entity_t entity_;
 };
 
 template <typename Alloc>
-class _kill_fut : _command_base<Alloc> {
+class _kill_fut : _command_impl_base<_kill_fut<Alloc>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    _kill_fut(future_entity_t fut) noexcept
-        : _command_base<Alloc>(&_invoke, &_destroy), fut_(fut) {}
+    _kill_fut(future_entity_t fut) noexcept : fut_(fut) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self  = static_cast<_kill_fut*>(payload);
-        const auto eneity = future_map[self->fut_.get()];
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) noexcept {
+        const auto eneity = future_map[fut_.get()];
         world.kill(eneity);
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     future_entity_t fut_;
 };
 
 template <typename Alloc>
-class _kill : _command_base<Alloc> {
+class _kill : _command_impl_base<_kill<Alloc>, Alloc> {
 public:
     using future_map_t = typename _command_base<Alloc>::future_map_t;
 
-    _kill(entity_t entity) noexcept
-        : _command_base<Alloc>(&_invoke, &_destroy), entity_(entity) {}
+    _kill(entity_t entity) noexcept : entity_(entity) {}
 
-private:
-    static void _invoke(
-        void* payload, world_base<Alloc>& world, future_map_t& future_map) {
-        auto* const self = static_cast<_kill*>(payload);
-        world.kill(self->entity_);
+    void invoke(world_base<Alloc>& world, future_map_t& future_map) {
+        world.kill(entity_);
     }
 
-    static void _destroy(void* ptr) noexcept { (void)ptr; }
-
+private:
     entity_t entity_;
 };
 
