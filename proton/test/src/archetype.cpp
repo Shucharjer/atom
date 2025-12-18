@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iterator>
 #include <string>
 #include <neutron/print.hpp>
@@ -61,10 +62,26 @@ void test_empty() {
     }
 }
 
+void test_emplace_with_reserve() {
+    archetype<> arche{ spread_type<std::string> };
+    constexpr auto loop = 1600'0000;
+    arche.reserve(loop);
+    using namespace std::chrono;
+    auto beg = high_resolution_clock::now();
+    for (auto i = 0; i < loop; ++i) {
+        arche.emplace(i);
+    }
+    auto end     = high_resolution_clock::now();
+    auto elapsed = duration_cast<microseconds>(end - beg);
+
+    println("elapsed: {} microseconds", elapsed.count());
+}
+
 int main() {
     test_has();
     test_view();
     test_empty();
+    test_emplace_with_reserve();
 
     return 0;
 }

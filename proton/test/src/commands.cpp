@@ -1,3 +1,4 @@
+#include <chrono>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -20,15 +21,29 @@ using commands = basic_commands<>;
 
 template <>
 constexpr bool as_component<std::string> = true;
+template <>
+constexpr bool as_component<int> = true;
 
 void task1(commands cmds);
 void task2(commands cmds, query<with<std::string&>> query);
 void task3(commands cmds, query<with<const std::string&>> query);
+void task4(commands cmds, query<with<int>>) {
+    using namespace std::chrono;
+    auto beg            = high_resolution_clock::now();
+    constexpr auto loop = 10'000'000;
+    for (auto i = 0; i < loop; ++i) {
+        cmds.spawn<int>();
+    }
+    auto end     = high_resolution_clock::now();
+    auto elapsed = duration_cast<microseconds>(end - beg);
+    println("elapsed: {} seconds", static_cast<float>(elapsed.count()) / 1e6);
+}
 
 using enum stage;
 constexpr auto world = world_desc | add_system<update, &task1> |
                        add_system<update, &task2, before<task1>> |
-                       add_system<update, &task3, after<task2>>;
+                       add_system<update, &task3, after<task2>> |
+                       add_system<shutdown, &task4>;
 
 int main() {
     exec::static_thread_pool pool;
@@ -41,6 +56,14 @@ int main() {
         println("frame {}", frame);
         call<update>(sch, cmdbufs, worlds);
     }
+
+    using namespace std::chrono;
+    auto beg = high_resolution_clock::now();
+    call<shutdown>(sch, cmdbufs, worlds);
+    auto end     = high_resolution_clock::now();
+    auto elapsed = duration_cast<microseconds>(end - beg);
+    println("elapsed: {}", elapsed.count());
+    println("elapsed: {} seconds", static_cast<float>(elapsed.count()) / 1e6);
 
     return 0;
 }
