@@ -3,38 +3,40 @@ project(
     LANGUAGES CXX
 )
 
+# CMake
+
+list(INSERT CMAKE_MODULE_PATH 0 ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/modules)
+
+# options
+
+option(BUILD_PROTON_TESTING OFF)
+option(BUILD_PROTON_BENCHMARK OFF)
+
+# project source
+
 file(GLOB_RECURSE SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 add_library(proton STATIC ${SRC_FILES})
+add_library(atom::proton ALIAS proton)
 target_include_directories(proton PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(proton PUBLIC neutron)
 find_package(stdexec CONFIG REQUIRED)
 target_link_libraries(proton PUBLIC STDEXEC::stdexec)
 
-option(PROTON_BUILD_TEST OFF)
-option(PROTON_BUILD_BENCHMARK OFF)
+# options support
 
-if (PROTON_BUILD_TEST)
-  add_executable(example_application ${CMAKE_CURRENT_SOURCE_DIR}/test/src/example_application.cpp)
-  target_include_directories(example_application PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/include)
+if (BUILD_PROTON_TESTING)
+  enable_testing()
+
+  add_executable(example_application ${CMAKE_CURRENT_SOURCE_DIR}/example/src/example_application.cpp)
+  target_include_directories(example_application PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/example/include)
   target_link_libraries(example_application PRIVATE proton)
-  add_executable(world_base ${CMAKE_CURRENT_SOURCE_DIR}/test/src/world_base.cpp)
-  target_include_directories(world_base PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/include)
-  target_link_libraries(world_base PRIVATE proton)
-  add_executable(commands ${CMAKE_CURRENT_SOURCE_DIR}/test/src/commands.cpp)
-  target_include_directories(commands PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/include)
-  target_link_libraries(commands PRIVATE proton)
-  add_executable(archetype ${CMAKE_CURRENT_SOURCE_DIR}/test/src/archetype.cpp)
-  target_include_directories(archetype PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/include)
-  target_link_libraries(archetype PRIVATE proton)
-  add_executable(query ${CMAKE_CURRENT_SOURCE_DIR}/test/src/query.cpp)
-  target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/include)
-  target_link_libraries(query PRIVATE proton)
-  add_executable(command_buffer ${CMAKE_CURRENT_SOURCE_DIR}/test/src/command_buffer.cpp)
-  target_include_directories(command_buffer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/include)
-  target_link_libraries(command_buffer PRIVATE proton)
+
+  set(test_dir ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  set(test_output_dir ${CMAKE_CURRENT_BINARY_DIR}/test)
+  exec_dir(${test_dir} "" ${test_output_dir} true proton)
 endif()
 
-if(PROTON_BUILD_BENCHMARK)
+if(BUILD_PROTON_BENCHMARK)
   if(NOT ATOM_ENABLE_BENCHMARK)
     message(FATAL_ERROR "Set 'PROTON_BUILD_BENCHMARK', but do not enable 'ATOM_ENABLE_BENCHMARK'")
   endif()

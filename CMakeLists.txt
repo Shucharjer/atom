@@ -15,6 +15,7 @@ project(
 
 # options
 
+option(ATOM_BUILD_DOCS "" OFF)
 option(ATOM_ENABLE_BENCHMARK "Enable benchmark" OFF)
 option(ATOM_ENABLE_AVX512 "Enable AVX512 instructions" OFF)
 option(ATOM_ENABLE_AVX10_1 "Enable AVX10.1. Enable AVX512 before enable this" OFF)
@@ -52,6 +53,28 @@ include(GNUInstallDirs)
 add_subdirectory(neutron)
 add_subdirectory(proton)
 add_subdirectory(electron)
+
+if(ATOM_BUILD_DOCS)
+  find_package(Doxygen REQUIRED dot)
+  if(NOT DOXYGEN_FOUND)
+    message(FATAL_ERROR "Required to build documents but doxygen is not found!")
+  endif()
+  include(FetchContent)
+
+  FetchContent_Declare(
+    doxygen-awesome-css
+    GIT_REPOSITORY https://github.com/jothepro/doxygen-awesome-css
+    GIT_TAG main
+    GIT_SHALLOW 1)
+  FetchContent_MakeAvailable(doxygen-awesome-css)
+
+  FetchContent_GetProperties(doxygen-awesome-css)
+
+  if(NOT doxygen-awesome-css_POPULATED)
+    FetchContent_Populate(doxygen-awesome-css)
+    set(doxygen-awesome-css_INCLUDE_DIR ${doxygen-awesome-css_SOURCE_DIR})
+  endif()
+endif()
 
 if(ATOM_ENABLE_BENCHMARK)
   include(FetchContent)
