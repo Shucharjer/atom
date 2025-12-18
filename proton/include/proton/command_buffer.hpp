@@ -303,7 +303,7 @@ class alignas(std::hardware_destructive_interference_size) command_buffer {
     static constexpr auto default_align = static_cast<std::align_val_t>(16);
 
     struct _ptr_deletor {
-        void operator()(std::byte* ptr) noexcept {
+        constexpr void operator()(std::byte* ptr) noexcept {
             ::operator delete(ptr, default_align);
         }
     };
