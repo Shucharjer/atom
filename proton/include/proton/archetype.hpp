@@ -909,8 +909,8 @@ public:
         return _apply_indices(sorted, type_list{});
     }
 
-    NODISCARD constexpr auto entities() noexcept -> entity_t* {
-        return index2entity_.data();
+    NODISCARD constexpr auto entities() noexcept -> std::span<entity_t> {
+        return { index2entity_.data(), index2entity_.size() };
     }
 
     constexpr void reserve(size_type n) {
@@ -1005,7 +1005,6 @@ private:
     }
 
     constexpr auto _emplace(entity_t entity) {
-        neutron::println("emplace: {}", entity);
         const index_t index = size_;
         if (size_ != capacity_) [[likely]] {
             _emplace_normally();
