@@ -11,8 +11,8 @@
 #include <vector>
 #include <neutron/memory.hpp>
 #include <neutron/shift_map.hpp>
-#include "neutron/template_list.hpp"
-#include "neutron/type_hash.hpp"
+#include <neutron/template_list.hpp>
+#include <neutron/type_hash.hpp>
 #include "proton/archetype.hpp"
 
 namespace proton {
@@ -45,6 +45,7 @@ class world_base {
 
 public:
     using archetype = archetype<Alloc>;
+    using size_type = size_t;
 
     template <typename Al = Alloc>
     constexpr explicit world_base(const Al& alloc = Alloc{})
@@ -69,6 +70,11 @@ public:
 
     constexpr void kill(entity_t entity);
 
+    constexpr void reserve(size_type n);
+
+    template <component... Components>
+    constexpr void reserve(size_type n);
+
 private:
     constexpr entity_t _get_new_entity();
     template <component... Components>
@@ -84,7 +90,7 @@ private:
     _unordered_map<uint64_t, archetype> archetypes_;
     /// mapping entity to the archetype stores it
     neutron::shift_map<
-        entity_t, archetype*, 32UL, sizeof(entity_t) * 4UL, Alloc>
+        entity_t, archetype*, 1024UL, neutron::half_bits<entity_t>, Alloc>
         entities_;
     _vector_t<generation_t> generations_;
     _priority_queue<uint32_t> free_indices_;
@@ -102,7 +108,8 @@ ATOM_FORCE_INLINE constexpr static index_t
 template <_std_simple_allocator Alloc>
 constexpr entity_t world_base<Alloc>::_get_new_entity() {
     if (free_indices_.empty()) {
-        return entities_.size();
+        generations_.emplace_back();
+        return generations_.size() - 1;
     }
     const index_t index = free_indices_.top();
     free_indices_.pop();
@@ -216,12 +223,33 @@ constexpr void world_base<Alloc>::remove_components(entity_t entity) {
 
 template <_std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::kill(entity_t entity) {
-    auto* arche = entities_.at(entity);
+    auto* const arche = entities_.at(entity);
     if (arche != nullptr) {
         arche->erase(entity);
     }
     entities_.erase(entity);
     free_indices_.push(_get_index(entity));
+}
+
+template <_std_simple_allocator Alloc>
+constexpr void world_base<Alloc>::reserve(size_type n) {
+    entities_.reserve(n);
+    generations_.reserve(n);
+}
+
+template <_std_simple_allocator Alloc>
+template <component... Components>
+constexpr void world_base<Alloc>::reserve(size_type n) {
+    using namespace neutron;
+    using list          = type_list<Components...>;
+    constexpr auto hash = make_array_hash<list>();
+
+    if (auto iter = archetypes_.find(hash); iter != archetypes_.end()) {
+        iter->second.reserve(n);
+    }
+
+    entities_.reserve(n);
+    generations_.reserve(n);
 }
 
 } // namespace _world_base
