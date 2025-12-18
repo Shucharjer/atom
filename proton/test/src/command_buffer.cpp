@@ -62,15 +62,6 @@ int main() {
         auto elapsed = duration_cast<microseconds>(end - beg);
         println(
             "elapsed: {} seconds", static_cast<float>(elapsed.count()) / tosec);
-
-        auto& cmdbuf = cmdbufs[0];
-        commands cmds{ cmdbuf };
-        query<with<int>> qry{ world };
-        cmdbuf.reset();
-        for (auto e : qry.entities()) {
-            cmds.kill(e); // BUG: duplicated index
-        }
-        cmdbuf.apply(reinterpret_cast<world_base<>&>(world));
     }
 
     return 0;
