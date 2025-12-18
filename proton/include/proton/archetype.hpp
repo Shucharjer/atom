@@ -8,6 +8,7 @@
 #include <memory>
 #include <memory_resource>
 #include <new>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -19,6 +20,7 @@
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
 #include <neutron/utility.hpp>
+#include "neutron/print.hpp"
 #include "proton.hpp"
 #include "proton/proton.hpp"
 
@@ -205,6 +207,10 @@ public:
     }
     constexpr auto size() const noexcept { return size_; }
     constexpr auto empty() const noexcept { return size_ == 0; }
+
+    NODISCARD constexpr auto entities() const noexcept -> std::span<entity_t> {
+        return std::span<entity_t>{ entities_, size_ };
+    }
 
 private:
     size_type size_;
@@ -828,7 +834,7 @@ public:
         _emplace(entity, std::forward<Components>(components)...);
     }
 
-    constexpr void erase(entity_t entity) noexcept {
+    constexpr void erase(entity_t entity) {
         const auto index      = entity2index_.at(entity);
         const auto last_index = size_ - 1;
 
@@ -907,6 +913,35 @@ public:
         return index2entity_.data();
     }
 
+    constexpr void reserve(size_type n) {
+        if (capacity_ >= n) {
+            return;
+        }
+
+        entity2index_.reserve(n);
+        index2entity_.reserve(n);
+        for (auto i = 0; i < hash_list_.size(); ++i) {
+            basic_info info         = basic_info_[i];
+            const auto align        = _get_align(info.align);
+            auto& data              = storage_[i];
+            const auto new_capacity = n;
+            auto* const ptr         = static_cast<std::byte*>(
+                ::operator new(new_capacity * info.size, align));
+            if (info.trivially_relocatable) {
+                std::memcpy(
+                    std::assume_aligned<32>(ptr),
+                    std::assume_aligned<32>(data.get()), size_ * info.size);
+            } else {
+                for (size_t j = 0; j < size_; ++i) {
+                    const size_t dist = info.size * j;
+                    move_constructors_[i](ptr + dist, data.get() + dist);
+                    destructors_[i](data.get() + dist);
+                }
+            }
+            data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
+        }
+    }
+
     NODISCARD constexpr auto get_allocator() const noexcept {
         return hash_list_.get_allocator();
     }
@@ -970,6 +1005,7 @@ private:
     }
 
     constexpr auto _emplace(entity_t entity) {
+        neutron::println("emplace: {}", entity);
         const index_t index = size_;
         if (size_ != capacity_) [[likely]] {
             _emplace_normally();
@@ -1014,9 +1050,9 @@ private:
                     std::assume_aligned<default_alignment>(storage_[i].get()),
                     capacity_ * info.size);
             } else {
-                for (auto i = 0; i < size_; ++i) {
+                for (auto j = 0; j < size_; ++j) {
                     const ptrdiff_t diff =
-                        static_cast<ptrdiff_t>(info.size) * i;
+                        static_cast<ptrdiff_t>(info.size) * j;
                     auto* const src = data.get() + diff;
                     move_constructors_[i](ptr + diff, src);
                     destructors_[i](src);
