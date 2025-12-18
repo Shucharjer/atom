@@ -317,9 +317,15 @@ public:
     CONSTEXPR23 command_buffer(const Al& alloc = {})
         : commands_(_allocator_t<_command_base>{ alloc }),
           buffers_(_allocator_t<_unique_ptr>{ alloc }) {
-        auto* const ptr =
-            static_cast<std::byte*>(::operator new(block_size, default_align));
-        buffers_.emplace_back(ptr, _ptr_deletor{});
+        std::byte* ptr = nullptr;
+        try {
+            ptr = static_cast<std::byte*>(
+                ::operator new(block_size, default_align));
+            buffers_.emplace_back(ptr, _ptr_deletor{});
+        } catch (...) {
+            ::operator delete(ptr, default_align);
+            throw;
+        }
     }
 
     constexpr Alloc get_allocator() noexcept {
@@ -493,12 +499,12 @@ private:
                 ::operator new(block_size, default_align));
             buffers_.emplace_back(ptr, _ptr_deletor{});
             aligned = _next_aligned<align>(ptr);
-            offset_ = aligned - ptr;
+            offset_ = aligned + size - ptr;
             return aligned;
         } else [[likely]] {
             auto& current = buffers_[current_];
             aligned       = _next_aligned<align>(current.get());
-            offset_       = aligned - ptr;
+            offset_       = aligned + size - ptr;
             return aligned;
         }
     }
@@ -686,7 +692,6 @@ private:
 namespace std {
 
 template <typename Alloc>
-struct uses_allocator<proton::_command_buffer::command_buffer<Alloc>, Alloc> :
-    std::true_type {};
+struct uses_allocator<proton::command_buffer<Alloc>, Alloc> : std::true_type {};
 
 } // namespace std
