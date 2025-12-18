@@ -75,6 +75,8 @@ public:
     template <component... Components>
     constexpr void reserve(size_type n);
 
+    constexpr void clear();
+
 private:
     constexpr entity_t _get_new_entity();
     template <component... Components>
@@ -250,6 +252,16 @@ constexpr void world_base<Alloc>::reserve(size_type n) {
 
     entities_.reserve(n);
     generations_.reserve(n);
+}
+
+template <_std_simple_allocator Alloc>
+constexpr void world_base<Alloc>::clear() {
+    for (auto& [hash, arche] : archetypes_) {
+        proton::archetype<Alloc>& a = arche;
+        for (auto entity : a.entities()) {
+            kill(entity);
+        }
+    }
 }
 
 } // namespace _world_base
