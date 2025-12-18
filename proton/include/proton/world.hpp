@@ -8,7 +8,6 @@
 #include <neutron/execution.hpp>
 #include <neutron/memory.hpp>
 #include <neutron/shared_tuple.hpp>
-#include <neutron/shift_map.hpp>
 #include <neutron/type_hash.hpp>
 #include "proton/command_buffer.hpp"
 #include "proton/registry.hpp"
