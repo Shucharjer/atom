@@ -169,6 +169,11 @@ public:
 
     auto get_with_entity() noexcept { return eviews_ | std::views::join; }
 
+    auto entities() noexcept {
+        constexpr auto toe = [](const eview_t& ev) { return ev.entities(); };
+        return eviews_ | std::views::transform(toe) | std::views::join;
+    }
+
     NODISCARD size_t size() const noexcept { return eviews_.size(); }
 
 private:
