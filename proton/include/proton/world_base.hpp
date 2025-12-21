@@ -1,6 +1,19 @@
 #pragma once
 #include "proton/proton.hpp"
 
+#include <version>
+#ifndef HAS_STD_FLAT_MAP
+    #if defined(__cpp_lib_flat_map) && __cpp_lib_flat_map >= 202207L
+        #define HAS_STD_FLAT_MAP 1
+    #else
+        #define HAS_STD_FLAT_MAP 0
+    #endif
+#endif
+
+#if HAS_STD_FLAT_MAP
+    #include <flat_map>
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -21,6 +34,8 @@ struct world_accessor;
 
 namespace _world_base {
 
+#ifndef PROTON_DISABLE_GENERATION
+
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
 class world_base {
     template <typename, _std_simple_allocator>
@@ -34,17 +49,22 @@ class world_base {
     template <typename Ty>
     using _vector_t = std::vector<Ty, _allocator_t<Ty>>;
 
-    template <
-        typename Kty, typename Ty, typename Hash = std::hash<Kty>,
-        typename Pred = std::equal_to<Kty>>
-    using _unordered_map = std::unordered_map<
-        Kty, Ty, Hash, Pred, _allocator_t<std::pair<const Kty, Ty>>>;
+    using archetype = archetype<Alloc>;
+
+    #if HAS_STD_FLAT_MAP
+    using archetype_map = std::flat_map<
+        uint64_t, archetype, std::less<uint64_t>, _vector_t<uint64_t>,
+        _vector_t<archetype>>;
+    #else
+    using archetype_map = std::unordered_map<
+        uint64_t, archetype, std::hash<uint64_t>, std::equal_to<uint64_t>,
+        _allocator_t<std::pair<const uint64_t, archetype>>>;
+    #endif
 
     template <typename Ty>
     using _priority_queue = std::priority_queue<Ty, _vector_t<Ty>>;
 
 public:
-    using archetype = archetype<Alloc>;
     using size_type = size_t;
 
     template <typename Al = Alloc>
@@ -84,27 +104,28 @@ private:
     template <component... Components>
     constexpr void _emplace_new_entity(entity_t entity, Components&&...);
 
-    NODISCARD constexpr entity_t
-        _make_entity(generation_t gen, index_t index) const noexcept {
-        return (static_cast<entity_t>(gen) << 32UL) | index;
-    }
-
-    _unordered_map<uint64_t, archetype> archetypes_;
+    archetype_map archetypes_;
     /// mapping entity to the archetype stores it
     neutron::shift_map<
         entity_t, archetype*, 1024UL, neutron::half_bits<entity_t>, Alloc>
         entities_;
     _vector_t<generation_t> generations_;
     _priority_queue<uint32_t> free_indices_;
-
-    // for fast query
-
-    _unordered_map<uint64_t, _vector_t<archetype*>> combined_archetypes_;
 };
+
+ATOM_FORCE_INLINE static constexpr generation_t
+    _get_gen(entity_t entity) noexcept {
+    return static_cast<generation_t>(entity >> 32U);
+}
 
 ATOM_FORCE_INLINE constexpr static index_t
     _get_index(entity_t entity) noexcept {
     return static_cast<index_t>(entity);
+}
+
+NODISCARD ATOM_FORCE_INLINE constexpr static entity_t
+    _make_entity(generation_t gen, index_t index) noexcept {
+    return (static_cast<entity_t>(gen) << 32UL) | index;
 }
 
 template <_std_simple_allocator Alloc>
@@ -257,12 +278,23 @@ constexpr void world_base<Alloc>::reserve(size_type n) {
 template <_std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::clear() {
     for (auto& [hash, arche] : archetypes_) {
-        proton::archetype<Alloc>& a = arche;
-        for (auto entity : a.entities()) {
+        for (auto entity : arche.entities()) {
             kill(entity);
         }
     }
 }
+
+#else
+
+// TODO: extremely fast world_base
+
+template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+class world_base {
+public:
+private:
+};
+
+#endif
 
 } // namespace _world_base
 
