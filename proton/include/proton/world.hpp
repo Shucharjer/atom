@@ -23,6 +23,12 @@ class basic_world<registry<world_desc>, Alloc> : world_base<Alloc> {
     friend struct construct_from_world_t;
     friend struct world_accessor;
 
+    template <typename Ty>
+    using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
+
+    template <typename Ty>
+    using _vector_t = std::vector<Ty, _allocator_t<Ty>>;
+
 public:
     using allocator_type = Alloc;
     using registry_t     = registry<world_desc>;
@@ -37,6 +43,9 @@ public:
     template <typename Al = Alloc>
     constexpr explicit basic_world(const Al& alloc = {})
         : world_base<Alloc>(alloc) {}
+
+private:
+    _vector_t<command_buffer>* command_buffers_;
 };
 
 template <typename Registry, _std_simple_allocator Alloc>
@@ -53,13 +62,13 @@ class basic_world : world_base<Alloc> {
         return *static_cast<const world_base<Alloc>*>(this);
     }
 
-public:
     template <typename Ty>
     using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
 
     template <typename Ty>
     using _vector_t = std::vector<Ty, _allocator_t<Ty>>;
 
+public:
     using allocator_type = Alloc;
     using registry_t     = Registry;
     using components     = typename registry_t::components;
