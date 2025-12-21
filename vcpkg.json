@@ -3,7 +3,12 @@
     "dependencies": [
         "stdexec",
         "glm",
-        "imgui",
+        {
+            "name": "imgui",
+            "features": [
+                "docking-experimental"
+            ]
+        },
         "vulkan",
         "vulkan-headers",
         "vulkan-hpp",
@@ -11,12 +16,19 @@
         "vulkan-memory-allocator",
         "vulkan-memory-allocator-hpp",
         {
-            "name": "sdl2",
-            "features": ["vulkan"]
+            "name": "sdl3",
+            "features": [
+                "vulkan"
+            ],
+            "platform": "windows"
         },
         {
-            "name": "sdl3",
-            "features": ["vulkan"]
+            "name": "sdl2",
+            "features": [
+                "vulkan",
+                "x11"
+            ],
+            "platform": "linux"
         }
     ]
 }
