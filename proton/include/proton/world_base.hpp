@@ -51,7 +51,7 @@ class world_base {
 
     using archetype = archetype<Alloc>;
 
-    #if HAS_STD_FLAT_MAP
+    #if HAS_STD_FLAT_MAP && false // flat_map is a not stable storage
     using archetype_map = std::flat_map<
         uint64_t, archetype, std::less<uint64_t>, _vector_t<uint64_t>,
         _vector_t<archetype>>;
