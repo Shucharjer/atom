@@ -2,6 +2,7 @@
 #include "proton/proton.hpp"
 
 #include <cstddef>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -76,7 +77,6 @@ public:
     using system_lists   = typename registry_t::system_list;
     using systems        = typename registry_t::systems;
     using locals         = typename registry_t::locals;
-    using archetype      = typename world_base<Alloc>::archetype;
     using command_buffer = command_buffer<Alloc>;
 
     template <typename Al = Alloc>
@@ -91,6 +91,23 @@ public:
     }
 
 private:
+    static constexpr auto _hash_array() noexcept {
+        return neutron::make_hash_array<components>();
+    }
+
+    template <component Component>
+    static consteval index_t _static_index() {
+        static_assert(std::same_as<Component, std::remove_cvref_t<Component>>);
+
+        constexpr auto array = _hash_array();
+        constexpr auto hash  = neutron::hash_of<Component>();
+        auto it = std::lower_bound(array.begin(), array.end(), hash);
+        if (it != array.end()) {
+            return *it;
+        }
+        throw std::invalid_argument("Component not exists");
+    }
+
     template <stage Stage>
     struct _get_systems {
         template <typename Ty>
