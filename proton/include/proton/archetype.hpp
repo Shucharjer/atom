@@ -14,13 +14,11 @@
 #include <utility>
 #include <vector>
 #include <neutron/concepts.hpp>
-#include <neutron/dense_map.hpp>
 #include <neutron/ranges.hpp>
 #include <neutron/shift_map.hpp>
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
 #include <neutron/utility.hpp>
-#include "neutron/print.hpp"
 #include "proton.hpp"
 #include "proton/proton.hpp"
 
@@ -1199,7 +1197,7 @@ private:
     size_type capacity_{};
     uint64_t hash_{};
     neutron::shift_map<
-        entity_t, index_t, 32UL, neutron::half_bits<entity_t>, Alloc>
+        entity_t, index_t, 256UL, neutron::half_bits<entity_t>, Alloc>
         entity2index_;
     _vector_t<entity_t> index2entity_;
 };
