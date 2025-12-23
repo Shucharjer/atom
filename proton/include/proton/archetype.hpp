@@ -934,7 +934,7 @@ public:
                     std::assume_aligned<32>(ptr),
                     std::assume_aligned<32>(data.get()), size_ * info.size);
             } else {
-                for (size_t j = 0; j < size_; ++i) {
+                for (size_t j = 0; j < size_; ++j) {
                     const size_t dist = info.size * j;
                     move_constructors_[i](ptr + dist, data.get() + dist);
                     destructors_[i](data.get() + dist);
@@ -942,6 +942,20 @@ public:
             }
             data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
         }
+    }
+
+    NODISCARD constexpr auto clear() {
+        const auto kinds = hash_list_.size();
+        for (size_type i = 0; i < kinds; ++i) {
+            const basic_info info = basic_info_[i];
+            auto* const ptr       = storage_[i].get();
+            for (size_type j = 0; j < size_; ++j) {
+                destructors_[i](ptr + (info.size * j));
+            }
+        }
+        index2entity_.clear();
+        entity2index_.clear();
+        size_ = 0;
     }
 
     NODISCARD constexpr auto get_allocator() const noexcept {
@@ -1105,8 +1119,9 @@ private:
         typename Ty = neutron::type_list_element_t<Index, TypeList>>
     void _emplace_with_relocate(size_type new_capacity) {
         constexpr auto align = _get_align(alignof(Ty));
-        auto* const ptr      = ::operator new(sizeof(Ty) * new_capacity, align);
-        auto& data           = storage_[Index];
+        auto* const ptr      = static_cast<std::byte*>(
+            ::operator new(sizeof(Ty) * new_capacity, align));
+        auto& data = storage_[Index];
         if constexpr (neutron::trivially_relocatable<Ty>) {
             std::memcpy(
                 std::assume_aligned<alignof(Ty)>(ptr),
@@ -1117,6 +1132,7 @@ private:
             auto* const src = reinterpret_cast<Ty*>(data.get());
             std::uninitialized_move_n(src, size_, dst);
         }
+        data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
 
     template <component... Components>
@@ -1126,7 +1142,6 @@ private:
             (_emplace_with_relocate<Is, neutron::type_list<Components...>>(
                  new_capacity),
              ...);
-            ++size_;
             capacity_ = new_capacity;
         }(std::index_sequence_for<Components...>());
     }
@@ -1199,7 +1214,7 @@ private:
             std::memcpy(
                 std::assume_aligned<static_cast<size_t>(align)>(ptr),
                 std::assume_aligned<static_cast<size_t>(align)>(data.get()),
-                capacity_);
+                sizeof(type) * size_);
         } else {
             auto* const input  = reinterpret_cast<type*>(data.get());
             auto* const output = reinterpret_cast<type*>(ptr);
