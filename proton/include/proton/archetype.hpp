@@ -814,12 +814,16 @@ public:
     NODISCARD constexpr auto emplace(entity_t entity) { _emplace(entity); }
 
     template <component... Components>
-    NODISCARD constexpr auto emplace(entity_t entity) {
+    NODISCARD auto emplace(entity_t entity) {
         constexpr uint64_t combined_hash =
             neutron::make_array_hash<neutron::type_list<Components...>>();
         assert(combined_hash == hash_);
 
-        emplace(entity);
+        using namespace neutron;
+        using sorted_list  = sorted_list_t<type_list<Components...>>;
+        using sorted_types = sorted_type_t<sorted_list>;
+
+        _emplace(entity, sorted_types{});
     }
 
     template <component... Components>
@@ -1062,6 +1066,72 @@ private:
     }
 
     template <component... Components>
+    auto _emplace(
+        entity_t entity, [[maybe_unused]] neutron::type_list<Components...>) {
+        const index_t index = size_;
+        if (size_ != capacity_) [[likely]] {
+            _emplace_normally<Components...>();
+        } else {
+            _emplace_with_relocate<Components...>();
+        }
+        entity2index_.try_emplace(entity, index);
+        index2entity_.push_back(entity);
+        ++size_;
+    }
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    constexpr void _emplace_normally() noexcept(
+        std::is_nothrow_default_constructible_v<Ty>) {
+        if constexpr (std::is_empty_v<Ty>) {
+            return;
+        }
+
+        _buffer_ptr& data = storage_[Index];
+        auto* const ptr   = data.get();
+        ::new (ptr + (sizeof(Ty) * size_)) Ty();
+    }
+
+    template <component... Components>
+    constexpr void _emplace_normally() {
+        [this]<size_t... Is>(std::index_sequence<Is...>) {
+            (_emplace_normally<Is, neutron::type_list<Components...>>(), ...);
+        }(std::index_sequence_for<Components...>());
+    }
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    void _emplace_with_relocate(size_type new_capacity) {
+        constexpr auto align = _get_align(alignof(Ty));
+        auto* const ptr      = ::operator new(sizeof(Ty) * new_capacity, align);
+        auto& data           = storage_[Index];
+        if constexpr (neutron::trivially_relocatable<Ty>) {
+            std::memcpy(
+                std::assume_aligned<alignof(Ty)>(ptr),
+                std::assume_aligned<alignof(Ty)>(data.get()),
+                sizeof(Ty) * size_);
+        } else {
+            auto* const dst = reinterpret_cast<Ty*>(ptr);
+            auto* const src = reinterpret_cast<Ty*>(data.get());
+            std::uninitialized_move_n(src, size_, dst);
+        }
+    }
+
+    template <component... Components>
+    constexpr void _emplace_with_relocate() {
+        [this]<size_t... Is>(std::index_sequence<Is...>) {
+            const auto new_capacity = capacity_ << 1;
+            (_emplace_with_relocate<Is, neutron::type_list<Components...>>(
+                 new_capacity),
+             ...);
+            ++size_;
+            capacity_ = new_capacity;
+        }(std::index_sequence_for<Components...>());
+    }
+
+    template <component... Components>
     constexpr void _emplace(entity_t entity, Components&&... components) {
         using namespace neutron;
         using sorted = sorted_type_t<
@@ -1087,17 +1157,20 @@ private:
         ++size_;
     }
 
-    template <size_t Index, typename SortedList, typename Tup>
-    constexpr void _emplace_normally(Tup&& tup) {
+    template <
+        size_t Index, typename SortedList, typename Tup,
+        typename Ty = neutron::type_list_element_t<Index, SortedList>>
+    constexpr void _emplace_normally(Tup&& tup) noexcept(
+        std::is_nothrow_constructible_v<
+            Ty, decltype(neutron::rmcvref_first<Ty>(std::forward<Tup>(tup)))>) {
         using namespace neutron;
-        using type = type_list_element_t<Index, SortedList>;
-        if constexpr (std::is_empty_v<type>) {
+        if constexpr (std::is_empty_v<Ty>) {
             return;
         }
 
         _buffer_ptr& data = storage_[Index];
-        auto* const ptr   = data.get() + (sizeof(type) * size_);
-        ::new (ptr) type(neutron::rmcvref_first<type>(std::forward<Tup>(tup)));
+        auto* const ptr   = data.get() + (sizeof(Ty) * size_);
+        ::new (ptr) Ty(neutron::rmcvref_first<Ty>(std::forward<Tup>(tup)));
     }
 
     template <component... SortedComponents, typename Tup>
