@@ -29,7 +29,6 @@
 #include <neutron/type_hash.hpp>
 #include "proton/archetype.hpp"
 
-
 namespace proton {
 
 struct world_accessor;
@@ -70,7 +69,7 @@ public:
     using size_type = size_t;
 
     template <typename Al = Alloc>
-    constexpr explicit world_base(const Al& alloc = Alloc{})
+    explicit world_base(const Al& alloc = Alloc{})
         : archetypes_(alloc), entities_(alloc) {}
 
     constexpr entity_t spawn();
@@ -97,7 +96,7 @@ public:
     template <component... Components>
     constexpr void reserve(size_type n);
 
-    constexpr void clear();
+    void clear();
 
 private:
     constexpr entity_t _get_new_entity();
@@ -143,7 +142,7 @@ template <_std_simple_allocator Alloc>
 constexpr entity_t world_base<Alloc>::_get_new_entity() {
     if (free_indices_.empty()) {
         const auto index = entities_.size();
-        entities_.emplace_back(index, nullptr);
+        entities_.emplace_back(index, nullptr); // _make_entity(0, index)
         return index;
     }
     const index_t index = free_indices_.top();
@@ -162,7 +161,7 @@ template <_std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity) {
     using namespace neutron;
-    using list              = type_list<std::remove_cvref_t<Components>...>;
+    using list              = type_list<Components...>;
     constexpr uint64_t hash = make_array_hash<list>();
 
     const auto index = _get_index(entity);
@@ -291,18 +290,20 @@ constexpr void world_base<Alloc>::reserve(size_type n) {
 
     if (auto iter = archetypes_.find(hash); iter != archetypes_.end()) {
         iter->second.reserve(n);
+    } else {
+        archetypes_.emplace(hash, archetype{ spread_type<Components...> });
     }
 
     entities_.reserve(n);
 }
 
 template <_std_simple_allocator Alloc>
-constexpr void world_base<Alloc>::clear() {
-    for (auto& [hash, arche] : archetypes_) {
-        for (auto entity : arche.entities()) {
-            kill(entity);
-        }
+void world_base<Alloc>::clear() {
+    for (auto& [_, archetype] : archetypes_) {
+        archetype.clear();
     }
+    free_indices_ = _priority_queue<index_t>{ entities_.get_allocator() };
+    entities_.clear();
 }
 
 #else
