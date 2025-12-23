@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <queue>
 #include <type_traits>
@@ -27,6 +28,7 @@
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
 #include "proton/archetype.hpp"
+
 
 namespace proton {
 
@@ -104,12 +106,16 @@ private:
     template <component... Components>
     constexpr void _emplace_new_entity(entity_t entity, Components&&...);
 
+    /// @brief A container stores archetypes with combined hash.
     archetype_map archetypes_;
-    /// mapping entity to the archetype stores it
-    neutron::shift_map<
-        entity_t, archetype*, 1024UL, neutron::half_bits<entity_t>, Alloc>
-        entities_;
-    _vector_t<generation_t> generations_;
+    /// @brief A stroage mapping index to entity and its archetype.
+    /// We do never pop or erase: when killing a entity, we set index zero
+    /// and its archetype pointer null.
+    _vector_t<std::pair<entity_t, archetype*>> entities_;
+    /// @brief A priority queue stores free indices.
+    /// It makes us have the ability to get the smallest index all the time.
+    /// A smaller index means we could access `sparse_map` or `shift_map` with
+    /// lower frequency of cache missing.
     _priority_queue<uint32_t> free_indices_;
 };
 
@@ -118,9 +124,14 @@ ATOM_FORCE_INLINE static constexpr generation_t
     return static_cast<generation_t>(entity >> 32U);
 }
 
-ATOM_FORCE_INLINE constexpr static index_t
+ATOM_FORCE_INLINE static constexpr index_t
     _get_index(entity_t entity) noexcept {
     return static_cast<index_t>(entity);
+}
+
+ATOM_FORCE_INLINE static constexpr void
+    _reset_index(entity_t& entity) noexcept {
+    entity = ((entity >> 32) << 32);
 }
 
 NODISCARD ATOM_FORCE_INLINE constexpr static entity_t
@@ -131,19 +142,20 @@ NODISCARD ATOM_FORCE_INLINE constexpr static entity_t
 template <_std_simple_allocator Alloc>
 constexpr entity_t world_base<Alloc>::_get_new_entity() {
     if (free_indices_.empty()) {
-        generations_.emplace_back();
-        return generations_.size() - 1;
+        const auto index = entities_.size();
+        entities_.emplace_back(index, nullptr);
+        return index;
     }
     const index_t index = free_indices_.top();
     free_indices_.pop();
-    return _make_entity(++generations_[index], index);
+    const generation_t gen = _get_gen(entities_[index].first) + 1;
+    entities_[index].first = _make_entity(gen, index);
+    return entities_[index].first;
 }
 
 template <_std_simple_allocator Alloc>
 constexpr entity_t world_base<Alloc>::spawn() {
-    const auto entity = _get_new_entity();
-    entities_.try_emplace(entity, nullptr);
-    return entity;
+    return _get_new_entity();
 }
 
 template <_std_simple_allocator Alloc>
@@ -153,15 +165,16 @@ constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity) {
     using list              = type_list<std::remove_cvref_t<Components>...>;
     constexpr uint64_t hash = make_array_hash<list>();
 
-    auto iter = archetypes_.find(hash);
+    const auto index = _get_index(entity);
+    auto iter        = archetypes_.find(hash);
     if (iter != archetypes_.end()) {
-        iter->second.emplace(entity);
-        entities_.try_emplace(entity, &iter->second);
+        iter->second.template emplace<Components...>(entity);
+        entities_[index].second = &iter->second;
     } else {
         auto [iter, _] = archetypes_.try_emplace(
             hash, archetype{ spread_type<Components...> });
-        iter->second.emplace(entity);
-        entities_.try_emplace(entity, &iter->second);
+        iter->second.template emplace<Components...>(entity);
+        entities_[index].second = &iter->second;
     }
 }
 
@@ -183,15 +196,16 @@ constexpr void world_base<Alloc>::_emplace_new_entity(
     using list              = type_list<std::remove_cvref_t<Components>...>;
     constexpr uint64_t hash = make_array_hash<list>();
 
-    auto iter = archetypes_.find(hash);
+    const auto index = _get_index(entity);
+    auto iter        = archetypes_.find(hash);
     if (iter != archetypes_.end()) [[likely]] {
         iter->second.emplace(entity, std::forward<Components>(components)...);
-        entities_.try_emplace(entity, &iter->second);
+        entities_[index].second = &iter->second;
     } else [[unlikely]] {
         auto [iter, _] = archetypes_.try_emplace(
             hash, archetype{ spread_type<std::remove_cvref_t<Components>...> });
         iter->second.emplace(entity, std::forward<Components>(components)...);
-        entities_.try_emplace(entity, &iter->second);
+        entities_[index].second = &iter->second;
     }
 }
 
@@ -210,7 +224,8 @@ template <component... Components>
 constexpr void world_base<Alloc>::add_components(entity_t entity) {
     constexpr uint64_t hash = neutron::make_array_hash<
         neutron::type_list<std::remove_cvref_t<Components>...>>();
-    if (entities_.at(entity) == nullptr) {
+    const auto index = _get_index(entity);
+    if (entities_[index].second == nullptr) {
         _emplace_new_entity<Components...>(entity);
         return;
     }
@@ -224,7 +239,8 @@ constexpr void world_base<Alloc>::add_components(
     entity_t entity, Components&&... components) {
     constexpr uint64_t hash =
         neutron::make_array_hash<neutron::type_list<Components...>>();
-    if (entities_.at(entity) == nullptr) {
+    const auto index = _get_index(entity);
+    if (entities_[index].second == nullptr) {
         _emplace_new_entity<Components...>(
             entity, std::forward<Components>(components)...);
         return;
@@ -236,7 +252,8 @@ constexpr void world_base<Alloc>::add_components(
 template <_std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::remove_components(entity_t entity) {
-    auto arche = entities_.at(entity);
+    const auto index = _get_index(entity);
+    auto*& arche     = entities_[index].second;
     if (arche == nullptr) [[unlikely]] {
         return;
     }
@@ -246,18 +263,23 @@ constexpr void world_base<Alloc>::remove_components(entity_t entity) {
 
 template <_std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::kill(entity_t entity) {
-    auto* const arche = entities_.at(entity);
+    const auto index = _get_index(entity);
+    const auto gen   = _get_gen(entity);
+
+    auto*& arche = entities_[index].second;
     if (arche != nullptr) {
         arche->erase(entity);
+        arche = nullptr;
     }
-    entities_.erase(entity);
-    free_indices_.push(_get_index(entity));
+    _reset_index(entities_[index].first);
+    if (gen != (std::numeric_limits<uint32_t>::max)()) [[likely]] {
+        free_indices_.push(index);
+    }
 }
 
 template <_std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::reserve(size_type n) {
     entities_.reserve(n);
-    generations_.reserve(n);
 }
 
 template <_std_simple_allocator Alloc>
@@ -272,7 +294,6 @@ constexpr void world_base<Alloc>::reserve(size_type n) {
     }
 
     entities_.reserve(n);
-    generations_.reserve(n);
 }
 
 template <_std_simple_allocator Alloc>
