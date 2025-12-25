@@ -435,7 +435,8 @@ public:
 struct basic_info {
     uint64_t trivially_copyable : 1;
     uint64_t trivially_relocatable : 1;
-    uint64_t _reserve : 14;
+    uint64_t trivially_move_assignable : 1;
+    uint64_t _reserve : 13;
     uint64_t align : 16;
     uint64_t size : 32;
 
@@ -448,11 +449,15 @@ struct basic_info {
     consteval static basic_info make() noexcept {
         return { .trivially_copyable    = std::is_trivially_copyable_v<Ty>,
                  .trivially_relocatable = neutron::trivially_relocatable<Ty>,
-                 ._reserve              = 0,
-                 .align                 = std::is_empty_v<Ty> ? 0 : alignof(Ty),
-                 .size = std::is_empty_v<Ty> ? 0 : sizeof(Ty) };
+                 .trivially_move_assignable =
+                     std::is_trivially_move_assignable_v<Ty>,
+                 ._reserve = 0,
+                 .align    = std::is_empty_v<Ty> ? 0 : alignof(Ty),
+                 .size     = std::is_empty_v<Ty> ? 0 : sizeof(Ty) };
     }
 };
+
+static_assert(sizeof(basic_info) == sizeof(uint64_t));
 
 /**
  * @brief Generates an array of @ref basic_info objects from a type list.
@@ -531,16 +536,16 @@ class archetype {
     static constexpr size_t initial_capacity  = 64;
 
 public:
-    using _hash_type       = uint32_t;
-    using _hash_vector     = _vector_t<_hash_type>;
-    using _ctor_fn         = void (*)(void*);
-    using _mov_ctor_fn     = void (*)(void*, void*);
-    using _mov_assign_fn   = void (*)(void*, void*);
-    using _dtor_fn         = void (*)(void*);
-    using allocator_type   = _allocator_t<std::byte>;
-    using allocator_traits = std::allocator_traits<allocator_type>;
     using size_type        = size_t;
     using difference_type  = ptrdiff_t;
+    using _hash_type       = uint32_t;
+    using _hash_vector     = _vector_t<_hash_type>;
+    using _ctor_fn         = void (*)(void*, size_type);
+    using _mov_ctor_fn     = void (*)(void*, size_type, void*);
+    using _mov_assign_fn   = void (*)(void*, void*);
+    using _dtor_fn         = void (*)(void*, size_type);
+    using allocator_type   = _allocator_t<std::byte>;
+    using allocator_traits = std::allocator_traits<allocator_type>;
 
     /**
      * @brief Constructs an archetype from a list of component types.
@@ -562,40 +567,35 @@ public:
               alloc),
           basic_info_({ basic_info::make<Components>()... }, alloc),
           constructors_(
-              { [](void* ptr) noexcept(
+              { [](void* ptr, size_t n) noexcept(
                     std::is_nothrow_default_constructible_v<Components>) {
-                  if constexpr (!std::is_empty_v<Components>) {
-                      ::new (ptr) Components();
-                  }
+                  auto* const first = static_cast<Components*>(ptr);
+                  std::uninitialized_default_construct_n(first, n);
               }... },
               alloc),
           move_constructors_(
-              { [](void* dst, void* src) noexcept(
+              { [](void* dst, size_type n, void* src) noexcept(
                     std::is_nothrow_move_constructible_v<Components>) {
-                  if constexpr (!std::is_empty_v<Components>) {
-                      ::new (dst)
-                          Components(std::move(*static_cast<Components*>(src)));
-                  }
+                  auto* const psrc = static_cast<Components*>(src);
+                  auto* const pdst = static_cast<Components*>(dst);
+                  std::uninitialized_move_n(psrc, n, pdst);
               }... },
               alloc),
           move_assignments_(
               { [](void* dst, void* src) noexcept(
                     std::is_nothrow_move_assignable_v<Components>) {
-                  if constexpr (!std::is_empty_v<Components>) {
-                      (*static_cast<Components*>(dst) =
-                           std::move(*static_cast<Components*>(src)));
-                  }
+                  (*static_cast<Components*>(dst) =
+                       std::move(*static_cast<Components*>(src)));
               }... },
               alloc),
           destructors_(
-              { [](void* ptr) noexcept {
-                  if constexpr (!std::is_empty_v<Components>) {
-                      static_cast<Components*>(ptr)->~Components();
-                  }
+              { [](void* ptr, size_type n) noexcept {
+                  std::destroy_n(static_cast<Components*>(ptr), n);
               }... },
               alloc),
           storage_(sizeof...(Components), alloc), capacity_(initial_capacity),
-          hash_(neutron::make_array_hash<neutron::type_list<Components...>>()) {
+          hash_(neutron::make_array_hash<neutron::type_list<Components...>>()),
+          entity2index_(alloc), index2entity_(alloc) {
         using namespace neutron;
         [this]<size_t... Is>(std::index_sequence<Is...>) {
             (_set_storage<Is, Components...>(), ...);
@@ -627,7 +627,9 @@ public:
           destructors_(archetype.get_allocator()),
           storage_(archetype.get_allocator()),
           entity2index_(archetype.get_allocator()),
-          index2entity_(archetype.get_allocator()) {
+          index2entity_(archetype.get_allocator())
+    //   created_(archetype.get_allocator())
+    {
         using namespace neutron;
         using sorted_list =
             sorted_type_t<sorted_list_t<type_list<Components...>>>;
@@ -787,9 +789,7 @@ public:
 
             _dtor_fn dtor        = destructors_[i];
             std::byte* const ptr = storage_[i].get();
-            for (size_type j = 0; j < size_; ++j) {
-                dtor(ptr + (size * j));
-            }
+            destructors_[i](ptr, size_);
         }
         hash_list_.clear();
     }
@@ -851,13 +851,13 @@ public:
                 auto* dst        = data + (info.size * index);
                 auto* src        = data + (info.size * last_index);
 
-                if (info.trivially_relocatable) {
+                if (info.trivially_move_assignable) {
                     std::memcpy(dst, src, info.size);
                 } else {
                     // requires component move assignable
                     move_assignments_[i](dst, src);
                     // requires component destructible
-                    destructors_[i](src);
+                    destructors_[i](src, 1);
                 }
             }
 
@@ -868,7 +868,7 @@ public:
             for (uint32_t i = 0; i < hash_list_.size(); ++i) {
                 const basic_info info = basic_info_[i];
                 auto* const data      = storage_[i].get();
-                destructors_[i](data + (info.size * index));
+                destructors_[i](data + (info.size * index), 1);
             }
         }
 
@@ -889,11 +889,12 @@ public:
         return capacity_;
     }
 
-    NODISCARD constexpr decltype(auto) hash_list() const noexcept {
+    NODISCARD constexpr auto hash_list() const noexcept
+        -> const _vector_t<_hash_type>& {
         return hash_list_;
     }
 
-    NODISCARD _buffer_ptr data() noexcept { return storage_.data(); }
+    NODISCARD _buffer_ptr* data() noexcept { return storage_.data(); }
 
     template <component... Components>
     NODISCARD constexpr auto view() noexcept {
@@ -911,8 +912,8 @@ public:
         return _apply_indices(sorted, type_list{});
     }
 
-    NODISCARD constexpr auto entities() noexcept -> std::span<entity_t> {
-        return { index2entity_.data(), index2entity_.size() };
+    NODISCARD constexpr auto entities() noexcept {
+        return entity2index_ | std::views::keys;
     }
 
     constexpr void reserve(size_type n) {
@@ -934,11 +935,9 @@ public:
                     std::assume_aligned<32>(ptr),
                     std::assume_aligned<32>(data.get()), size_ * info.size);
             } else {
-                for (size_t j = 0; j < size_; ++j) {
-                    const size_t dist = info.size * j;
-                    move_constructors_[i](ptr + dist, data.get() + dist);
-                    destructors_[i](data.get() + dist);
-                }
+                auto* const src = data.get();
+                move_constructors_[i](ptr, size_, src);
+                destructors_[i](src, size_);
             }
             data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
         }
@@ -949,9 +948,7 @@ public:
         for (size_type i = 0; i < kinds; ++i) {
             const basic_info info = basic_info_[i];
             auto* const ptr       = storage_[i].get();
-            for (size_type j = 0; j < size_; ++j) {
-                destructors_[i](ptr + (info.size * j));
-            }
+            destructors_[i](ptr, size_);
         }
         index2entity_.clear();
         entity2index_.clear();
@@ -1041,7 +1038,7 @@ private:
 
             _buffer_ptr& data = storage_[i];
             auto* const ptr   = data.get();
-            constructors_[i](ptr + (size_ * info.size));
+            constructors_[i](ptr + (size_ * info.size), 1);
         }
     }
 
@@ -1065,15 +1062,11 @@ private:
                     std::assume_aligned<default_alignment>(storage_[i].get()),
                     capacity_ * info.size);
             } else {
-                for (auto j = 0; j < size_; ++j) {
-                    const ptrdiff_t diff =
-                        static_cast<ptrdiff_t>(info.size) * j;
-                    auto* const src = data.get() + diff;
-                    move_constructors_[i](ptr + diff, src);
-                    destructors_[i](src);
-                }
+                auto* const src = data.get();
+                move_constructors_[i](ptr, size_, src);
+                destructors_[i](src, size_);
             }
-            constructors_[i](ptr + (capacity_ * info.size));
+            constructors_[i](ptr + (capacity_ * info.size), 1);
             data = _buffer_ptr{ ptr, deletor };
         }
         capacity_ = new_capacity;
@@ -1216,9 +1209,10 @@ private:
                 std::assume_aligned<static_cast<size_t>(align)>(data.get()),
                 sizeof(type) * size_);
         } else {
-            auto* const input  = reinterpret_cast<type*>(data.get());
-            auto* const output = reinterpret_cast<type*>(ptr);
-            std::uninitialized_move_n(input, size_, output);
+            auto* const src = reinterpret_cast<type*>(data.get());
+            auto* const dst = reinterpret_cast<type*>(ptr);
+            std::uninitialized_move_n(src, size_, dst);
+            std::destroy_n(src, size_);
         }
         ::new (ptr + (sizeof(type) * capacity_))
             type(neutron::rmcvref_first<type>(std::forward<FwdTup>(tup)));
@@ -1287,6 +1281,7 @@ private:
     neutron::shift_map<
         entity_t, index_t, 256UL, neutron::half_bits<entity_t>, Alloc>
         entity2index_;
+    // _vector_t<bool> created_;
     _vector_t<entity_t> index2entity_;
 };
 
