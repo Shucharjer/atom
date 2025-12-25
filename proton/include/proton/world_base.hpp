@@ -35,8 +35,15 @@ struct world_accessor;
 
 namespace _world_base {
 
-#ifndef PROTON_DISABLE_GENERATION
-
+/**
+ * @class world_base
+ * @brief A container stores entities and their component data.
+ *
+ * The index of an entity starts from 1.
+ * @tparam Alloc Allocator satisfy the contrains of allocator by the standard
+ * library. Default is `std::allocator<std::byte>`. The container would rebind
+ * allocator automatically.
+ */
 template <_std_simple_allocator Alloc = std::allocator<std::byte>>
 class world_base {
     template <typename, _std_simple_allocator>
@@ -52,15 +59,15 @@ class world_base {
 
     using archetype = archetype<Alloc>;
 
-    #if HAS_STD_FLAT_MAP && false // flat_map is a not stable storage
+#if HAS_STD_FLAT_MAP && false // flat_map is a not stable storage
     using archetype_map = std::flat_map<
         uint64_t, archetype, std::less<uint64_t>, _vector_t<uint64_t>,
         _vector_t<archetype>>;
-    #else
+#else
     using archetype_map = std::unordered_map<
         uint64_t, archetype, std::hash<uint64_t>, std::equal_to<uint64_t>,
         _allocator_t<std::pair<const uint64_t, archetype>>>;
-    #endif
+#endif
 
     template <typename Ty>
     using _priority_queue = std::priority_queue<Ty, _vector_t<Ty>>;
@@ -70,7 +77,7 @@ public:
 
     template <typename Al = Alloc>
     explicit world_base(const Al& alloc = Alloc{})
-        : archetypes_(alloc), entities_(alloc) {}
+        : archetypes_(alloc), entities_(1, alloc) {}
 
     constexpr entity_t spawn();
 
@@ -96,6 +103,8 @@ public:
     template <component... Components>
     constexpr void reserve(size_type n);
 
+    constexpr bool is_alive(entity_t entity) noexcept;
+
     void clear();
 
 private:
@@ -110,6 +119,9 @@ private:
     /// @brief A stroage mapping index to entity and its archetype.
     /// We do never pop or erase: when killing a entity, we set index zero
     /// and its archetype pointer null.
+    /// Summary: for an entity ((gen, index), p_archetype),
+    /// ((gen, non-zero), nullptr) -> created, but has no component
+    /// ((gen, 0), 0) -> killed entity
     _vector_t<std::pair<entity_t, archetype*>> entities_;
     /// @brief A priority queue stores free indices.
     /// It makes us have the ability to get the smallest index all the time.
@@ -298,25 +310,20 @@ constexpr void world_base<Alloc>::reserve(size_type n) {
 }
 
 template <_std_simple_allocator Alloc>
+constexpr bool world_base<Alloc>::is_alive(entity_t entity) noexcept {
+    const auto index = _get_index(entity);
+    return index != 0 && entities_.size() > index;
+}
+
+template <_std_simple_allocator Alloc>
 void world_base<Alloc>::clear() {
     for (auto& [_, archetype] : archetypes_) {
         archetype.clear();
     }
     free_indices_ = _priority_queue<index_t>{ entities_.get_allocator() };
     entities_.clear();
+    entities_.emplace_back();
 }
-
-#else
-
-// TODO: extremely fast world_base
-
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
-class world_base {
-public:
-private:
-};
-
-#endif
 
 } // namespace _world_base
 
