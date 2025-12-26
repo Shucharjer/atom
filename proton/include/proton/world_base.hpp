@@ -14,6 +14,7 @@
     #include <flat_map>
 #endif
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -276,6 +277,7 @@ template <_std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::kill(entity_t entity) {
     const auto index = _get_index(entity);
     const auto gen   = _get_gen(entity);
+    assert(entity == entities_[index].first);
 
     auto*& arche = entities_[index].second;
     if (arche != nullptr) {
@@ -303,7 +305,9 @@ constexpr void world_base<Alloc>::reserve(size_type n) {
     if (auto iter = archetypes_.find(hash); iter != archetypes_.end()) {
         iter->second.reserve(n);
     } else {
-        archetypes_.emplace(hash, archetype{ spread_type<Components...> });
+        auto [it, succ] =
+            archetypes_.emplace(hash, archetype{ spread_type<Components...> });
+        it->second.reserve(n);
     }
 
     entities_.reserve(n);
