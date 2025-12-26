@@ -492,25 +492,6 @@ template <component... Comp>
 struct remove_components_t {};
 
 /**
- * @brief Custom deleter for aligned memory allocated via `operator new(size,
- * align_val_t)`.
- */
-struct _buffer_deletor {
-    std::align_val_t align;
-
-    /**
-     * @brief Deallocates memory with the stored alignment.
-     * @param ptr Pointer to deallocate.
-     */
-    constexpr void operator()(std::byte* ptr) const noexcept {
-        ::operator delete(ptr, align);
-    }
-};
-
-/// Alias for a unique pointer managing aligned byte buffers.
-using _buffer_ptr = std::unique_ptr<std::byte[], _buffer_deletor>;
-
-/**
  * @brief Represents a homogeneous collection of entities sharing the same set
  * of components.
 
@@ -534,6 +515,25 @@ class archetype {
 
     static constexpr size_t default_alignment = 32;
     static constexpr size_t initial_capacity  = 64;
+
+    /**
+     * @brief Custom deleter for aligned memory allocated via `operator
+     * new(size, align_val_t)`.
+     */
+    struct _buffer_deletor {
+        std::align_val_t align;
+
+        /**
+         * @brief Deallocates memory with the stored alignment.
+         * @param ptr Pointer to deallocate.
+         */
+        constexpr void operator()(std::byte* ptr) const noexcept {
+            ::operator delete(ptr, align);
+        }
+    };
+
+    /// Alias for a unique pointer managing aligned byte buffers.
+    using _buffer_ptr = std::unique_ptr<std::byte[], _buffer_deletor>;
 
 public:
     using size_type        = size_t;
@@ -783,7 +783,7 @@ public:
         for (auto i = 0; i < hash_list_.size(); ++i) {
             const basic_info info = basic_info_[i];
             const auto size       = info.size;
-            if (size == 0) {
+            if (size == 0) { // empty component
                 continue;
             }
 
@@ -867,7 +867,11 @@ public:
         } else {
             for (uint32_t i = 0; i < hash_list_.size(); ++i) {
                 const basic_info info = basic_info_[i];
-                auto* const data      = storage_[i].get();
+                if (info.size == 0) {
+                    continue;
+                }
+
+                auto* const data = storage_[i].get();
                 destructors_[i](data + (info.size * index), 1);
             }
         }
@@ -990,15 +994,18 @@ private:
     consteval auto
         _get_metainfo(neutron::type_list<SortedComponents...>) noexcept {
         constexpr std::array basic_info   = make_info<SortedComponents...>();
-        constexpr std::array constructors = { [](void* ptr) {
+        constexpr std::array constructors = { [](void* ptr, size_type n) {
             if constexpr (!std::is_empty_v<SortedComponents>) {
-                ::new (ptr) SortedComponents();
+                std::uninitialized_default_construct_n(
+                    static_cast<SortedComponents*>(ptr), n);
             }
         }... };
-        constexpr std::array move_constructors = { [](void* dst, void* src) {
+        constexpr std::array move_constructors = { [](void* dst, size_type n,
+                                                      void* src) {
             if constexpr (!std::is_empty_v<SortedComponents>) {
-                ::new (dst) SortedComponents(
-                    std::move(*static_cast<SortedComponents*>(src)));
+                auto* const ofirst = static_cast<SortedComponents*>(dst);
+                auto* const ifirst = static_cast<SortedComponents*>(src);
+                std::uninitialized_move_n(ifirst, n, ofirst);
             }
         }... };
         constexpr std::array move_assignments = { [](void* dst, void* src) {
@@ -1007,9 +1014,10 @@ private:
                     std::move(*static_cast<SortedComponents*>(src));
             }
         }... };
-        constexpr std::array destructors = { [](void* ptr) {
+        constexpr std::array destructors = { [](void* ptr, size_type n) {
             if constexpr (!std::is_empty_v<SortedComponents>) {
-                static_cast<SortedComponents*>(ptr)->~SortedComponents();
+                auto* const first = static_cast<SortedComponents*>(ptr);
+                std::destroy_n(first, n);
             }
         }... };
         return std::make_tuple(
@@ -1111,6 +1119,10 @@ private:
         size_t Index, typename TypeList,
         typename Ty = neutron::type_list_element_t<Index, TypeList>>
     void _emplace_with_relocate(size_type new_capacity) {
+        if (std::is_empty_v<Ty>) {
+            return;
+        }
+
         constexpr auto align = _get_align(alignof(Ty));
         auto* const ptr      = static_cast<std::byte*>(
             ::operator new(sizeof(Ty) * new_capacity, align));
@@ -1124,19 +1136,21 @@ private:
             auto* const dst = reinterpret_cast<Ty*>(ptr);
             auto* const src = reinterpret_cast<Ty*>(data.get());
             std::uninitialized_move_n(src, size_, dst);
+            std::destroy_n(src, size_);
         }
+        ::new (ptr + (sizeof(Ty) * size_)) Ty();
         data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
 
     template <component... Components>
     constexpr void _emplace_with_relocate() {
-        [this]<size_t... Is>(std::index_sequence<Is...>) {
-            const auto new_capacity = capacity_ << 1;
+        const auto new_capacity = capacity_ << 1;
+        [this, new_capacity]<size_t... Is>(std::index_sequence<Is...>) {
             (_emplace_with_relocate<Is, neutron::type_list<Components...>>(
                  new_capacity),
              ...);
-            capacity_ = new_capacity;
         }(std::index_sequence_for<Components...>());
+        capacity_ = new_capacity;
     }
 
     template <component... Components>
@@ -1178,7 +1192,7 @@ private:
 
         _buffer_ptr& data = storage_[Index];
         auto* const ptr   = data.get() + (sizeof(Ty) * size_);
-        ::new (ptr) Ty(neutron::rmcvref_first<Ty>(std::forward<Tup>(tup)));
+        ::new (ptr) Ty(rmcvref_first<Ty>(std::forward<Tup>(tup)));
     }
 
     template <component... SortedComponents, typename Tup>
@@ -1191,31 +1205,32 @@ private:
         }(std::index_sequence_for<SortedComponents...>());
     }
 
-    template <size_t Index, typename SortedList, typename FwdTup>
+    template <
+        size_t Index, typename SortedList, typename FwdTup,
+        typename Ty = neutron::type_list_element_t<Index, SortedList>>
     void _emplace_with_relocate(size_type new_capacity, FwdTup&& tup) {
-        using type = neutron::type_list_element_t<Index, SortedList>;
-        if constexpr (std::is_empty_v<type>) {
+        if constexpr (std::is_empty_v<Ty>) {
             return;
         }
 
-        constexpr auto align = _get_align(alignof(type));
+        constexpr auto align = _get_align(alignof(Ty));
 
         _buffer_ptr& data = storage_[Index];
         auto* ptr         = static_cast<std::byte*>(
-            ::operator new(sizeof(type) * new_capacity, align));
-        if constexpr (neutron::trivially_relocatable<type>) {
+            ::operator new(sizeof(Ty) * new_capacity, align));
+        if constexpr (neutron::trivially_relocatable<Ty>) {
             std::memcpy(
                 std::assume_aligned<static_cast<size_t>(align)>(ptr),
                 std::assume_aligned<static_cast<size_t>(align)>(data.get()),
-                sizeof(type) * size_);
+                sizeof(Ty) * size_);
         } else {
-            auto* const src = reinterpret_cast<type*>(data.get());
-            auto* const dst = reinterpret_cast<type*>(ptr);
+            auto* const src = reinterpret_cast<Ty*>(data.get());
+            auto* const dst = reinterpret_cast<Ty*>(ptr);
             std::uninitialized_move_n(src, size_, dst);
             std::destroy_n(src, size_);
         }
-        ::new (ptr + (sizeof(type) * capacity_))
-            type(neutron::rmcvref_first<type>(std::forward<FwdTup>(tup)));
+        ::new (ptr + (sizeof(Ty) * size_))
+            Ty(neutron::rmcvref_first<Ty>(std::forward<FwdTup>(tup)));
         data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
 
