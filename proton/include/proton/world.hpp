@@ -191,7 +191,7 @@ private:
     /// variables could be use in only one specific system
     /// Locals are _sys_tuple, a tuple with system info, used to get the correct
     /// local for each sys
-    neutron::type_list_rebind_t<std::tuple, locals> locals_;
+    neutron::type_list_rebind_t<neutron::shared_tuple, locals> locals_;
     // variables could be pass between each systems
     neutron::type_list_rebind_t<neutron::shared_tuple, resources> resources_;
 
