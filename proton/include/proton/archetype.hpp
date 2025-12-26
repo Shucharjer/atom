@@ -1129,8 +1129,8 @@ private:
         auto& data = storage_[Index];
         if constexpr (neutron::trivially_relocatable<Ty>) {
             std::memcpy(
-                std::assume_aligned<alignof(Ty)>(ptr),
-                std::assume_aligned<alignof(Ty)>(data.get()),
+                std::assume_aligned<static_cast<size_t>(align)>(ptr),
+                std::assume_aligned<static_cast<size_t>(align)>(data.get()),
                 sizeof(Ty) * size_);
         } else {
             auto* const dst = reinterpret_cast<Ty*>(ptr);
