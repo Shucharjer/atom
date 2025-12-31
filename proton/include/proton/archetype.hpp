@@ -19,6 +19,7 @@
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
 #include <neutron/utility.hpp>
+#include "neutron/utility.hpp"
 #include "proton.hpp"
 #include "proton/proton.hpp"
 
@@ -206,7 +207,8 @@ public:
     constexpr auto size() const noexcept { return size_; }
     constexpr auto empty() const noexcept { return size_ == 0; }
 
-    NODISCARD constexpr auto entities() const noexcept -> std::span<entity_t> {
+    ATOM_NODISCARD constexpr auto entities() const noexcept
+        -> std::span<entity_t> {
         return std::span<entity_t>{ entities_, size_ };
     }
 
@@ -498,9 +500,9 @@ struct remove_components_t {};
  * An archetype stores components in Structure-of-Arrays (SoA) layout. Each
  * component type has its own contiguous buffer, enabling efficient iteration
  * and cache-friendly access.
- * @tparam Alloc Allocator type conforming to `_std_simple_allocator` concept.
+ * @tparam Alloc Allocator type conforming to `std_simple_allocator` concept.
  */
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 class archetype {
     template <component...>
     friend class _view::view;
@@ -558,7 +560,7 @@ public:
      */
     template <component... Components, typename Al = Alloc>
     requires(sizeof...(Components) != 0)
-    CONSTEXPR23 archetype(
+    ATOM_CONSTEXPR_SINCE_CXX23 archetype(
         neutron::immediately_t, neutron::type_list<Components...>,
         const Al& alloc = {})
         : hash_list_(
@@ -578,7 +580,7 @@ public:
                     std::is_nothrow_move_constructible_v<Components>) {
                   auto* const psrc = static_cast<Components*>(src);
                   auto* const pdst = static_cast<Components*>(dst);
-                  std::uninitialized_move_n(psrc, n, pdst);
+                  neutron::uninitialized_move_if_noexcept_n(psrc, n, pdst);
               }... },
               alloc),
           move_assignments_(
@@ -779,7 +781,7 @@ public:
      *
      * Invokes destructors for all live components and deallocates storage.
      */
-    CONSTEXPR23 ~archetype() noexcept {
+    ATOM_CONSTEXPR_SINCE_CXX23 ~archetype() noexcept {
         for (auto i = 0; i < hash_list_.size(); ++i) {
             const basic_info info = basic_info_[i];
             const auto size       = info.size;
@@ -801,7 +803,7 @@ public:
      * @return `true` if all queried types are present; otherwise `false`.
      */
     template <typename... Args>
-    NODISCARD constexpr bool has() const noexcept {
+    ATOM_NODISCARD constexpr bool has() const noexcept {
         if constexpr (sizeof...(Args) == 1U) {
             constexpr auto hash = neutron::hash_of<Args...>();
             return std::binary_search(
@@ -811,10 +813,10 @@ public:
         }
     }
 
-    NODISCARD constexpr auto emplace(entity_t entity) { _emplace(entity); }
+    ATOM_NODISCARD constexpr auto emplace(entity_t entity) { _emplace(entity); }
 
     template <component... Components>
-    NODISCARD auto emplace(entity_t entity) {
+    ATOM_NODISCARD auto emplace(entity_t entity) {
         constexpr uint64_t combined_hash =
             neutron::make_array_hash<neutron::type_list<Components...>>();
         assert(combined_hash == hash_);
@@ -827,7 +829,7 @@ public:
     }
 
     template <component... Components>
-    NODISCARD constexpr auto
+    ATOM_NODISCARD constexpr auto
         emplace(entity_t entity, Components&&... components) {
         constexpr uint64_t combined_hash = neutron::make_array_hash<
             neutron::type_list<std::remove_cvref_t<Components>...>>();
@@ -881,32 +883,34 @@ public:
         --size_;
     }
 
-    NODISCARD constexpr size_type kinds() const noexcept {
+    ATOM_NODISCARD constexpr size_type kinds() const noexcept {
         return hash_list_.size();
     }
 
-    NODISCARD constexpr size_type size() const noexcept { return size_; }
+    ATOM_NODISCARD constexpr size_type size() const noexcept { return size_; }
 
-    NODISCARD constexpr bool empty() const noexcept { return size_ == 0UL; }
+    ATOM_NODISCARD constexpr bool empty() const noexcept {
+        return size_ == 0UL;
+    }
 
-    NODISCARD constexpr size_type capacity() const noexcept {
+    ATOM_NODISCARD constexpr size_type capacity() const noexcept {
         return capacity_;
     }
 
-    NODISCARD constexpr auto hash_list() const noexcept
+    ATOM_NODISCARD constexpr auto hash_list() const noexcept
         -> const _vector_t<_hash_type>& {
         return hash_list_;
     }
 
-    NODISCARD _buffer_ptr* data() noexcept { return storage_.data(); }
+    ATOM_NODISCARD _buffer_ptr* data() noexcept { return storage_.data(); }
 
     template <component... Components>
-    NODISCARD constexpr auto view() noexcept {
+    ATOM_NODISCARD constexpr auto view() noexcept {
         return ::proton::view<Components...>{ *this };
     }
 
     template <component... Components>
-    NODISCARD constexpr auto get()
+    ATOM_NODISCARD constexpr auto get()
         -> std::array<std::byte*, sizeof...(Components)> {
         using namespace neutron;
         using type_list   = type_list<std::remove_cvref_t<Components>...>;
@@ -916,7 +920,7 @@ public:
         return _apply_indices(sorted, type_list{});
     }
 
-    NODISCARD constexpr auto entities() noexcept {
+    ATOM_NODISCARD constexpr auto entities() noexcept {
         return entity2index_ | std::views::keys;
     }
 
@@ -947,7 +951,7 @@ public:
         }
     }
 
-    NODISCARD constexpr auto clear() {
+    ATOM_NODISCARD constexpr auto clear() {
         const auto kinds = hash_list_.size();
         for (size_type i = 0; i < kinds; ++i) {
             const basic_info info = basic_info_[i];
@@ -959,7 +963,7 @@ public:
         size_ = 0;
     }
 
-    NODISCARD constexpr auto get_allocator() const noexcept {
+    ATOM_NODISCARD constexpr auto get_allocator() const noexcept {
         return hash_list_.get_allocator();
     }
 
@@ -975,7 +979,7 @@ private:
     }
 
     template <size_t Index, component... SortedComponents>
-    CONSTEXPR23 void _set_storage() {
+    ATOM_CONSTEXPR_SINCE_CXX23 void _set_storage() {
         using namespace neutron;
         using type = type_list_element_t<Index, type_list<SortedComponents...>>;
         constexpr auto align = _get_align(alignof(type));
@@ -1005,7 +1009,7 @@ private:
             if constexpr (!std::is_empty_v<SortedComponents>) {
                 auto* const ofirst = static_cast<SortedComponents*>(dst);
                 auto* const ifirst = static_cast<SortedComponents*>(src);
-                std::uninitialized_move_n(ifirst, n, ofirst);
+                neutron::uninitialized_move_if_noexcept_n(ifirst, n, ofirst);
             }
         }... };
         constexpr std::array move_assignments = { [](void* dst, void* src) {
@@ -1123,22 +1127,27 @@ private:
             return;
         }
 
-        constexpr auto align = _get_align(alignof(Ty));
-        auto* const ptr      = static_cast<std::byte*>(
+        constexpr auto align     = _get_align(alignof(Ty));
+        constexpr auto alignment = static_cast<size_t>(align);
+        auto* const ptr          = static_cast<std::byte*>(
             ::operator new(sizeof(Ty) * new_capacity, align));
+        auto guard = neutron::make_exception_guard(
+            [this, ptr] { ::operator delete(ptr, align); });
         auto& data = storage_[Index];
         if constexpr (neutron::trivially_relocatable<Ty>) {
             std::memcpy(
-                std::assume_aligned<static_cast<size_t>(align)>(ptr),
-                std::assume_aligned<static_cast<size_t>(align)>(data.get()),
-                sizeof(Ty) * size_);
+                std::assume_aligned<alignment>(ptr),
+                std::assume_aligned<alignment>(data.get()), sizeof(Ty) * size_);
         } else {
-            auto* const dst = reinterpret_cast<Ty*>(ptr);
-            auto* const src = reinterpret_cast<Ty*>(data.get());
-            std::uninitialized_move_n(src, size_, dst);
+            auto* const dst =
+                std::assume_aligned<alignment>(reinterpret_cast<Ty*>(ptr));
+            auto* const src = std::assume_aligned<alignment>(
+                reinterpret_cast<Ty*>(data.get()));
+            neutron::uninitialized_move_if_noexcept_n(src, size_, dst);
             std::destroy_n(src, size_);
         }
         ::new (ptr + (sizeof(Ty) * size_)) Ty();
+        guard.mark_complete();
         data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
 
@@ -1213,24 +1222,30 @@ private:
             return;
         }
 
-        constexpr auto align = _get_align(alignof(Ty));
+        constexpr auto align     = _get_align(alignof(Ty));
+        constexpr auto alignment = static_cast<size_t>(align);
 
         _buffer_ptr& data = storage_[Index];
         auto* ptr         = static_cast<std::byte*>(
             ::operator new(sizeof(Ty) * new_capacity, align));
+        auto guard = neutron::make_exception_guard(
+            [this, ptr] { ::operator delete(ptr, align); });
         if constexpr (neutron::trivially_relocatable<Ty>) {
             std::memcpy(
                 std::assume_aligned<static_cast<size_t>(align)>(ptr),
                 std::assume_aligned<static_cast<size_t>(align)>(data.get()),
                 sizeof(Ty) * size_);
         } else {
-            auto* const src = reinterpret_cast<Ty*>(data.get());
-            auto* const dst = reinterpret_cast<Ty*>(ptr);
-            std::uninitialized_move_n(src, size_, dst);
+            auto* const src = std::assume_aligned<alignment>(
+                reinterpret_cast<Ty*>(data.get()));
+            auto* const dst =
+                std::assume_aligned<alignment>(reinterpret_cast<Ty*>(ptr));
+            neutron::uninitialized_move_if_noexcept_n(src, size_, dst);
             std::destroy_n(src, size_);
         }
         ::new (ptr + (sizeof(Ty) * size_))
             Ty(neutron::rmcvref_first<Ty>(std::forward<FwdTup>(tup)));
+        guard.mark_complete();
         data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
 
@@ -1314,7 +1329,7 @@ using archetype = archetype<std::pmr::polymorphic_allocator<>>;
 
 namespace std {
 
-template <proton::_std_simple_allocator Alloc>
+template <proton::std_simple_allocator Alloc>
 struct uses_allocator<proton::archetype<Alloc>, Alloc> : std::true_type {};
 
 } // namespace std
