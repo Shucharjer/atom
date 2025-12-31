@@ -24,7 +24,8 @@ function(translate CPPFRONT_EXECUTABLE CPP2_SRC_DIR CPP_OUTPUT_DIR)
       ${CPPFRONT_EXECUTABLE}
       ${input_file}
       -o ${output_file}
-      -cl)
+      -cl
+      -fno-rtti)
     add_custom_command(
       OUTPUT ${output_file}
       COMMAND ${CPPFRONT_COMMAND}
