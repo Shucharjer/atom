@@ -9,7 +9,7 @@
 namespace proton {
 
 template <typename... Args>
-class alignas(64) local {
+class local {
 public:
     static_assert((std::is_same_v<std::remove_const_t<Args>, Args> && ...));
 
@@ -36,9 +36,9 @@ struct construct_from_world_t<Sys, local<Args...>, Index> {
     using _predicate = _is_relevant_sys_tuple<Sys, Ty>;
 
     template <world World>
-    local<Args...>& operator()(World& world) {
-        using sys_tuple =
-            neutron::type_list_filt_t<_predicate, typename World::locals>;
+    local<Args...> operator()(World& world) const noexcept {
+        using sys_tuple = neutron::type_list_first_t<
+            neutron::type_list_filt_t<_predicate, typename World::locals>>;
         auto& locals = world_accessor::locals(world);
         return neutron::get_first<sys_tuple>(locals);
     }
