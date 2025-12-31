@@ -1068,6 +1068,7 @@ private:
             auto& data = storage_[i];
             auto* ptr  = static_cast<std::byte*>(
                 ::operator new(new_capacity * info.size, align));
+            constructors_[i](ptr + (capacity_ * info.size), 1);
             if (info.trivially_relocatable) {
                 std::memcpy(
                     std::assume_aligned<default_alignment>(ptr),
@@ -1078,7 +1079,6 @@ private:
                 move_constructors_[i](ptr, size_, src);
                 destructors_[i](src, size_);
             }
-            constructors_[i](ptr + (capacity_ * info.size), 1);
             data = _buffer_ptr{ ptr, deletor };
         }
         capacity_ = new_capacity;
@@ -1134,6 +1134,7 @@ private:
         auto guard = neutron::make_exception_guard(
             [this, ptr] { ::operator delete(ptr, align); });
         auto& data = storage_[Index];
+        ::new (ptr + (sizeof(Ty) * size_)) Ty();
         if constexpr (neutron::trivially_relocatable<Ty>) {
             std::memcpy(
                 std::assume_aligned<alignment>(ptr),
@@ -1146,7 +1147,6 @@ private:
             neutron::uninitialized_move_if_noexcept_n(src, size_, dst);
             std::destroy_n(src, size_);
         }
-        ::new (ptr + (sizeof(Ty) * size_)) Ty();
         guard.mark_complete();
         data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
@@ -1230,6 +1230,8 @@ private:
             ::operator new(sizeof(Ty) * new_capacity, align));
         auto guard = neutron::make_exception_guard(
             [this, ptr] { ::operator delete(ptr, align); });
+        ::new (ptr + (sizeof(Ty) * size_))
+            Ty(neutron::rmcvref_first<Ty>(std::forward<FwdTup>(tup)));
         if constexpr (neutron::trivially_relocatable<Ty>) {
             std::memcpy(
                 std::assume_aligned<static_cast<size_t>(align)>(ptr),
@@ -1243,8 +1245,6 @@ private:
             neutron::uninitialized_move_if_noexcept_n(src, size_, dst);
             std::destroy_n(src, size_);
         }
-        ::new (ptr + (sizeof(Ty) * size_))
-            Ty(neutron::rmcvref_first<Ty>(std::forward<FwdTup>(tup)));
         guard.mark_complete();
         data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
