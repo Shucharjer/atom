@@ -174,7 +174,7 @@ public:
         return eviews_ | std::views::transform(toe) | std::views::join;
     }
 
-    NODISCARD size_t size() const noexcept { return eviews_.size(); }
+    ATOM_NODISCARD size_t size() const noexcept { return eviews_.size(); }
 
 private:
     std::vector<eview_t> eviews_;

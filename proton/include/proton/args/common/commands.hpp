@@ -7,7 +7,7 @@
 
 namespace proton {
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 class basic_commands {
 public:
     explicit constexpr basic_commands(
@@ -67,7 +67,7 @@ private:
     command_buffer<Alloc>* command_buffer_;
 };
 
-template <auto Sys, _std_simple_allocator Alloc, size_t Index>
+template <auto Sys, std_simple_allocator Alloc, size_t Index>
 struct construct_from_world_t<Sys, basic_commands<Alloc>, Index> {
     template <world World>
     basic_commands<Alloc> operator()(World& world) const noexcept {

@@ -287,7 +287,7 @@ private:
 
 } // namespace _command
 
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+template <std_simple_allocator Alloc = std::allocator<std::byte>>
 class alignas(std::hardware_destructive_interference_size) command_buffer {
     template <typename Ty>
     using _allocator_t = neutron::rebind_alloc_t<Alloc, Ty>;
@@ -314,7 +314,7 @@ public:
     using allocator_type = Alloc;
 
     template <typename Al = Alloc>
-    CONSTEXPR23 command_buffer(const Al& alloc = {})
+    ATOM_CONSTEXPR_SINCE_CXX23 command_buffer(const Al& alloc = {})
         : commands_(_allocator_t<_command_base>{ alloc }),
           buffers_(_allocator_t<_unique_ptr>{ alloc }) {
         std::byte* ptr = nullptr;
@@ -542,7 +542,7 @@ using _command_buffer::command_buffer;
  *
  * @tparam Alloc
  */
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+template <std_simple_allocator Alloc = std::allocator<std::byte>>
 class alignas(std::hardware_destructive_interference_size) command_buffer {
 
     template <typename Ty>

@@ -24,6 +24,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <neutron/flat_map.hpp>
 #include <neutron/memory.hpp>
 #include <neutron/shift_map.hpp>
 #include <neutron/template_list.hpp>
@@ -45,9 +46,9 @@ namespace _world_base {
  * library. Default is `std::allocator<std::byte>`. The container would rebind
  * allocator automatically.
  */
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+template <std_simple_allocator Alloc = std::allocator<std::byte>>
 class world_base {
-    template <typename, _std_simple_allocator>
+    template <typename, std_simple_allocator>
     friend class basic_world;
 
     friend struct ::proton::world_accessor;
@@ -61,14 +62,18 @@ class world_base {
     using archetype = archetype<Alloc>;
 
 #if HAS_STD_FLAT_MAP && false // flat_map is a not stable storage
-    using archetype_map = std::flat_map<
-        uint64_t, archetype, std::less<uint64_t>, _vector_t<uint64_t>,
-        _vector_t<archetype>>;
+    using archetype_map = _unstable_map<uint64_t, archetype>;
 #else
     using archetype_map = std::unordered_map<
         uint64_t, archetype, std::hash<uint64_t>, std::equal_to<uint64_t>,
         _allocator_t<std::pair<const uint64_t, archetype>>>;
 #endif
+
+    template <
+        typename Kty, typename Ty, typename Hasher = std::hash<Kty>,
+        typename Equal = std::equal_to<Kty>>
+    using _unordered_map = std::unordered_map<
+        Kty, Ty, Hasher, Equal, _allocator_t<std::pair<const Kty, Ty>>>;
 
     template <typename Ty>
     using _priority_queue = std::priority_queue<Ty, _vector_t<Ty>>;
@@ -146,12 +151,12 @@ ATOM_FORCE_INLINE static constexpr void
     entity = ((entity >> 32) << 32);
 }
 
-NODISCARD ATOM_FORCE_INLINE constexpr static entity_t
+ATOM_NODISCARD ATOM_FORCE_INLINE constexpr static entity_t
     _make_entity(generation_t gen, index_t index) noexcept {
     return (static_cast<entity_t>(gen) << 32UL) | index;
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 constexpr entity_t world_base<Alloc>::_get_new_entity() {
     if (free_indices_.empty()) {
         const auto index = entities_.size();
@@ -165,12 +170,12 @@ constexpr entity_t world_base<Alloc>::_get_new_entity() {
     return entities_[index].first;
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 constexpr entity_t world_base<Alloc>::spawn() {
     return _get_new_entity();
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity) {
     using namespace neutron;
@@ -190,7 +195,7 @@ constexpr void world_base<Alloc>::_emplace_new_entity(entity_t entity) {
     }
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr entity_t world_base<Alloc>::spawn() {
     constexpr uint64_t hash =
@@ -200,7 +205,7 @@ constexpr entity_t world_base<Alloc>::spawn() {
     return entity;
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::_emplace_new_entity(
     entity_t entity, Components&&... components) {
@@ -221,7 +226,7 @@ constexpr void world_base<Alloc>::_emplace_new_entity(
     }
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr entity_t world_base<Alloc>::spawn(Components&&... components) {
     constexpr uint64_t hash = neutron::make_array_hash<
@@ -231,7 +236,7 @@ constexpr entity_t world_base<Alloc>::spawn(Components&&... components) {
     return entity;
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::add_components(entity_t entity) {
     constexpr uint64_t hash = neutron::make_array_hash<
@@ -245,7 +250,7 @@ constexpr void world_base<Alloc>::add_components(entity_t entity) {
     // move a entity from an archetype to another
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::add_components(
     entity_t entity, Components&&... components) {
@@ -261,7 +266,7 @@ constexpr void world_base<Alloc>::add_components(
     // move a entity from an archetype to another
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::remove_components(entity_t entity) {
     const auto index = _get_index(entity);
@@ -273,7 +278,7 @@ constexpr void world_base<Alloc>::remove_components(entity_t entity) {
     // remove components
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::kill(entity_t entity) {
     const auto index = _get_index(entity);
     const auto gen   = _get_gen(entity);
@@ -290,12 +295,12 @@ constexpr void world_base<Alloc>::kill(entity_t entity) {
     }
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 constexpr void world_base<Alloc>::reserve(size_type n) {
     entities_.reserve(n);
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 template <component... Components>
 constexpr void world_base<Alloc>::reserve(size_type n) {
     using namespace neutron;
@@ -313,13 +318,13 @@ constexpr void world_base<Alloc>::reserve(size_type n) {
     entities_.reserve(n);
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 constexpr bool world_base<Alloc>::is_alive(entity_t entity) noexcept {
     const auto index = _get_index(entity);
     return index != 0 && entities_.size() > index;
 }
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 void world_base<Alloc>::clear() {
     for (auto& [_, archetype] : archetypes_) {
         archetype.clear();
@@ -331,7 +336,7 @@ void world_base<Alloc>::clear() {
 
 } // namespace _world_base
 
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+template <std_simple_allocator Alloc = std::allocator<std::byte>>
 using world_base = _world_base::world_base<Alloc>;
 
 } // namespace proton

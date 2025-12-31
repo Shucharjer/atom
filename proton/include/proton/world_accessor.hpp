@@ -5,7 +5,7 @@ namespace proton {
 
 struct world_accessor {
     template <world World>
-    NODISCARD static decltype(auto) base(World& world) noexcept {
+    ATOM_NODISCARD static decltype(auto) base(World& world) noexcept {
         return world._base();
     }
     template <world World>

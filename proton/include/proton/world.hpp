@@ -18,7 +18,7 @@
 
 namespace proton {
 
-template <_std_simple_allocator Alloc>
+template <std_simple_allocator Alloc>
 class basic_world<registry<world_desc>, Alloc> : public world_base<Alloc> {
     template <auto, typename, size_t>
     friend struct construct_from_world_t;
@@ -49,7 +49,7 @@ private:
     _vector_t<command_buffer>* command_buffers_;
 };
 
-template <typename Registry, _std_simple_allocator Alloc>
+template <typename Registry, std_simple_allocator Alloc>
 class basic_world : public world_base<Alloc> {
     template <auto, typename, size_t>
     friend struct construct_from_world_t;

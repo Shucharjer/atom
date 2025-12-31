@@ -134,13 +134,13 @@ struct registry {
 };
 
 template <
-    auto WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
+    auto WorldDesc, std_simple_allocator Alloc = std::allocator<std::byte>>
 auto make_world(const Alloc& alloc = {}) {
     return basic_world<registry<WorldDesc>, Alloc>(alloc);
 }
 
 template <
-    auto... WorldDesc, _std_simple_allocator Alloc = std::allocator<std::byte>>
+    auto... WorldDesc, std_simple_allocator Alloc = std::allocator<std::byte>>
 auto make_worlds(const Alloc& alloc = Alloc{}) {
     return std::tuple<basic_world<registry<WorldDesc>, Alloc>...>(alloc);
 }
