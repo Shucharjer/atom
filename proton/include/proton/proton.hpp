@@ -93,7 +93,8 @@ concept component =
     } || as_component<std::remove_cvref_t<Ty>>) &&
     std::default_initializable<std::remove_cvref_t<Ty>> &&
     std::movable<std::remove_cvref_t<Ty>> &&
-    std::destructible<std::remove_cvref_t<Ty>>;
+    std::destructible<std::remove_cvref_t<Ty>> &&
+    std::is_nothrow_destructible_v<Ty>;
 
 /*! @cond TURN_OFF_DOXYGEN */
 namespace internal {
@@ -143,12 +144,12 @@ concept resource_like =
                         internal::_is_resource, Ty, internal::_is_bundle,
                         std::remove_cvref_t>::value);
 
-using neutron::_std_simple_allocator;
+using neutron::std_simple_allocator;
 using neutron::rebind_alloc_t;
 
 // world.world
 template <
-    typename Registry, _std_simple_allocator Alloc = std::allocator<std::byte>>
+    typename Registry, std_simple_allocator Alloc = std::allocator<std::byte>>
 class basic_world;
 
 // template <_std_simple_allocator Alloc>
@@ -183,7 +184,7 @@ public:
     constexpr explicit future_entity_t(index_t inframe_index)
         : identity_(inframe_index) {}
 
-    NODISCARD constexpr index_t get() const noexcept { return identity_; }
+    ATOM_NODISCARD constexpr index_t get() const noexcept { return identity_; }
 
 private:
     index_t identity_;
@@ -200,7 +201,7 @@ struct construct_from_world_t {
 template <auto Descriptor>
 class registry;
 
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+template <std_simple_allocator Alloc = std::allocator<std::byte>>
 class basic_commands;
 
 template <auto Sys, typename Arg, size_t IndexOfSysInSysList = 0>
@@ -224,7 +225,7 @@ constexpr inline bool _valid_system<Sys, Ret (*)(Args...)> =
 template <auto Sys>
 concept system = _valid_system<Sys>;
 
-template <_std_simple_allocator Alloc = std::allocator<std::byte>>
+template <std_simple_allocator Alloc = std::allocator<std::byte>>
 class archetype;
 
 template <typename Filter>
