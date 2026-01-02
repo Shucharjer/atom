@@ -19,7 +19,6 @@
 #include <neutron/template_list.hpp>
 #include <neutron/type_hash.hpp>
 #include <neutron/utility.hpp>
-#include "neutron/utility.hpp"
 #include "proton.hpp"
 #include "proton/proton.hpp"
 
@@ -545,7 +544,7 @@ public:
     using _ctor_fn         = void (*)(void*, size_type);
     using _mov_ctor_fn     = void (*)(void*, size_type, void*);
     using _mov_assign_fn   = void (*)(void*, void*);
-    using _dtor_fn         = void (*)(void*, size_type);
+    using _dtor_fn         = void (*)(void*, size_type) noexcept;
     using allocator_type   = _allocator_t<std::byte>;
     using allocator_traits = std::allocator_traits<allocator_type>;
 
@@ -897,6 +896,8 @@ public:
         return capacity_;
     }
 
+    ATOM_NODISCARD constexpr uint64_t hash() const noexcept { return hash_; }
+
     ATOM_NODISCARD constexpr auto hash_list() const noexcept
         -> const _vector_t<_hash_type>& {
         return hash_list_;
@@ -1084,24 +1085,180 @@ private:
         capacity_ = new_capacity;
     }
 
-    template <component... Components>
-    auto _emplace(
-        entity_t entity, [[maybe_unused]] neutron::type_list<Components...>) {
-        const index_t index = size_;
-        if (size_ != capacity_) [[likely]] {
-            _emplace_normally<Components...>();
-        } else {
-            _emplace_with_relocate<Components...>();
-        }
-        entity2index_.try_emplace(entity, index);
-        index2entity_.push_back(entity);
-        ++size_;
+    // relocation
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    requires std::is_empty_v<Ty>
+    auto _prepare_for_relocation(_vector_t<_buffer_ptr>&) noexcept {
+        return;
     }
 
     template <
         size_t Index, typename TypeList,
         typename Ty = neutron::type_list_element_t<Index, TypeList>>
-    constexpr void _emplace_normally() noexcept(
+    requires(!std::is_empty_v<Ty>)
+    auto _prepare_for_relocation(
+        _vector_t<_buffer_ptr>& buffers, size_type capacity) {
+        constexpr auto align = _get_align(alignof(Ty));
+
+        auto* const ptr = static_cast<std::byte*>(
+            ::operator new(sizeof(Ty) * capacity, align));
+        buffers[Index] = _buffer_ptr{ ptr, _buffer_deletor{ align } };
+    }
+
+    template <component... Components>
+    auto _prepare_for_relocation(size_type capacity) -> _vector_t<_buffer_ptr> {
+        using tlist = neutron::type_list<Components...>;
+        return [this, capacity]<size_t... Is>(std::index_sequence<Is...>) {
+            _vector_t<_buffer_ptr> buffers(sizeof...(Components));
+            (_prepare_for_relocation<Is, tlist>(buffers, capacity), ...);
+            return buffers;
+        }(std::index_sequence_for<Components...>());
+    }
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    requires neutron::nothrow_conditional_movable<Ty>
+    auto _relocate_data(
+        _vector_t<_buffer_ptr>& buffers,
+        [[maybe_unused]] size_type& succ) noexcept {
+        constexpr auto align = _get_align(alignof(Ty));
+        constexpr auto alg   = static_cast<size_t>(align);
+
+        _buffer_ptr& data = storage_[Index];
+        auto* const src =
+            std::assume_aligned<alg>(reinterpret_cast<Ty*>(data.get()));
+        auto* const dst = std::assume_aligned<alg>(
+            reinterpret_cast<Ty*>(buffers[Index].get()));
+        if constexpr (neutron::trivially_relocatable<Ty>) {
+            std::memcpy(dst, src, sizeof(Ty) * size_);
+        } else {
+            neutron::uninitialized_move_if_noexcept_n(
+                std::assume_aligned<alg>(src), size_,
+                std::assume_aligned<alg>(dst));
+        }
+        ++succ;
+    }
+
+    template <component... Components>
+    requires(neutron::nothrow_conditional_movable<Components> && ...)
+    auto _relocate_data(_vector_t<_buffer_ptr>& buffers) noexcept {
+        using tlist = neutron::type_list<Components...>;
+        return [this, &buffers]<size_t... Is>(std::index_sequence<Is...>) {
+            size_type succ = 0;
+            (_relocate_data<Is, tlist>(buffers, succ), ...);
+            return succ;
+        }(std::index_sequence_for<Components...>());
+    }
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    requires(!neutron::nothrow_conditional_movable<Ty>)
+    auto _relocate_data(_vector_t<_buffer_ptr>& buffers, size_type& succ) {
+        constexpr auto align     = _get_align(alignof(Ty));
+        constexpr auto alignment = static_cast<size_t>(align);
+
+        _buffer_ptr& data = storage_[Index];
+        auto* const src   = reinterpret_cast<Ty*>(data.get());
+        auto* const dst   = reinterpret_cast<Ty*>(buffers[Index].get());
+        neutron::uninitialized_move_if_noexcept_n(
+            std::assume_aligned<alignment>(src), size_,
+            std::assume_aligned<alignment>(dst));
+        ++succ;
+    }
+
+    template <component... Components>
+    requires(!(neutron::nothrow_conditional_movable<Components> && ...))
+    auto _relocate_data(_vector_t<_buffer_ptr>& buffers) {
+        using tlist = neutron::type_list<Components...>;
+        return [this, &buffers]<size_t... Is>(std::index_sequence<Is...>) {
+            size_type succ = 0;
+            (_relocate_data<Is, tlist>(buffers, succ), ...);
+            return succ;
+        }(std::index_sequence_for<Components...>());
+    }
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    auto _clean_for_relocation(
+        _vector_t<_buffer_ptr>& buffers, size_type succ) noexcept {
+        constexpr auto align = _get_align(alignof(Ty));
+        constexpr auto alg   = static_cast<size_t>(align);
+
+        if (Index < succ) {
+            _buffer_ptr& data = buffers[Index];
+            auto* const ptr =
+                std::assume_aligned<alg>(reinterpret_cast<Ty*>(data.get()));
+            std::destroy_n(ptr, size_);
+        }
+    }
+
+    template <component... Components>
+    auto _clean_for_relocation(
+        _vector_t<_buffer_ptr>& buffers, size_type succ) noexcept {
+        using tlist = neutron::type_list<Components...>;
+
+        if (succ == sizeof...(Components)) [[likely]] {
+            return;
+        }
+
+        [this, &buffers, succ]<size_t... Is>(std::index_sequence<Is...>) {
+            ((_clean_for_relocation<Is, tlist>(buffers, succ)), ...);
+        }(std::index_sequence_for<Components...>());
+    }
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    auto _apply_relocation() noexcept {
+        auto* const ptr = reinterpret_cast<Ty*>(storage_[Index].get());
+        std::destroy_n(ptr, size_);
+    }
+
+    template <component... Components>
+    auto _apply_relocation(_vector_t<_buffer_ptr>& buffers) noexcept {
+        using tlist = neutron::type_list<Components...>;
+        [this]<size_t... Is>(std::index_sequence<Is...>) {
+            (_apply_relocation<Is, tlist>(), ...);
+        }(std::index_sequence_for<Components...>());
+        storage_ = std::move(buffers);
+    }
+
+    template <component... Components>
+    requires(neutron::nothrow_conditional_movable<Components> && ...)
+    auto _relocate(size_type capacity) {
+        auto buffers = _prepare_for_relocation<Components...>(
+            capacity);                             // guard: unique_ptr
+        _relocate_data<Components...>(buffers);    // nothrow
+        _apply_relocation<Components...>(buffers); // nothrow
+        capacity_ = capacity;
+    }
+
+    template <component... Components>
+    requires(!(neutron::nothrow_conditional_movable<Components> && ...))
+    auto _relocate(size_type capacity) {
+        auto buffers = _prepare_for_relocation<Components...>(
+            capacity); // guard: unique_ptr
+        size_type succ = 0;
+        auto guard     = neutron::make_exception_guard([this, &succ] {
+            _clean_for_relocation<Components...>(buffers, succ);
+        });
+        _relocate_data<Components...>(buffers);    // guard: see upper
+        _apply_relocation<Components...>(buffers); // nothrow
+        capacity_ = capacity;
+    }
+
+    // emplace<...>();
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    constexpr void _emplace_one_normally_noexcept() noexcept(
         std::is_nothrow_default_constructible_v<Ty>) {
         if constexpr (std::is_empty_v<Ty>) {
             return;
@@ -1113,53 +1270,177 @@ private:
     }
 
     template <component... Components>
-    constexpr void _emplace_normally() {
+    requires(std::is_nothrow_default_constructible_v<Components> && ...)
+    constexpr void _emplace_normally() noexcept {
         [this]<size_t... Is>(std::index_sequence<Is...>) {
-            (_emplace_normally<Is, neutron::type_list<Components...>>(), ...);
+            (_emplace_one_normally_noexcept<
+                 Is, neutron::type_list<Components...>>(),
+             ...);
         }(std::index_sequence_for<Components...>());
     }
 
     template <
         size_t Index, typename TypeList,
         typename Ty = neutron::type_list_element_t<Index, TypeList>>
-    void _emplace_with_relocate(size_type new_capacity) {
-        if (std::is_empty_v<Ty>) {
+    constexpr void _emplace_one_normally(size_t& succ) {
+        if constexpr (std::is_empty_v<Ty>) {
             return;
         }
 
-        constexpr auto align     = _get_align(alignof(Ty));
-        constexpr auto alignment = static_cast<size_t>(align);
-        auto* const ptr          = static_cast<std::byte*>(
-            ::operator new(sizeof(Ty) * new_capacity, align));
-        auto guard = neutron::make_exception_guard(
-            [this, ptr] { ::operator delete(ptr, align); });
-        auto& data = storage_[Index];
+        _buffer_ptr& data = storage_[Index];
+        auto* const ptr   = data.get();
         ::new (ptr + (sizeof(Ty) * size_)) Ty();
-        if constexpr (neutron::trivially_relocatable<Ty>) {
-            std::memcpy(
-                std::assume_aligned<alignment>(ptr),
-                std::assume_aligned<alignment>(data.get()), sizeof(Ty) * size_);
-        } else {
-            auto* const dst =
-                std::assume_aligned<alignment>(reinterpret_cast<Ty*>(ptr));
-            auto* const src = std::assume_aligned<alignment>(
-                reinterpret_cast<Ty*>(data.get()));
-            neutron::uninitialized_move_if_noexcept_n(src, size_, dst);
-            std::destroy_n(src, size_);
+        ++succ;
+    }
+
+    template <
+        size_t Index, typename TypeList,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    void _clean_for_emplace_one(size_t succ) noexcept {
+        if (Index < succ) {
+            _buffer_ptr& data = storage_[Index];
+            auto* const ptr   = data.get();
+            reinterpret_cast<Ty*>(ptr + (sizeof(Ty) * size_))->~Ty();
         }
-        guard.mark_complete();
-        data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
     }
 
     template <component... Components>
-    constexpr void _emplace_with_relocate() {
-        const auto new_capacity = capacity_ << 1;
-        [this, new_capacity]<size_t... Is>(std::index_sequence<Is...>) {
-            (_emplace_with_relocate<Is, neutron::type_list<Components...>>(
-                 new_capacity),
-             ...);
+    requires(!(std::is_nothrow_default_constructible_v<Components> && ...))
+    void _emplace_normally() {
+        using tlist          = neutron::type_list<Components...>;
+        constexpr size_t num = sizeof...(Components);
+        size_t succ          = 0;
+        auto guard           = neutron::make_exception_guard([this, &succ] {
+            if (succ != num) [[unlikely]] {
+                [this, succ]<size_t... Is>(std::index_sequence<Is...>) {
+                    (_clean_for_emplace_one<Is, tlist>(succ), ...);
+                }(std::index_sequence_for<Components...>());
+            }
+        });
+        [this, &succ]<size_t... Is>(std::index_sequence<Is...>) {
+            (_emplace_one_normally<Is, tlist>(succ), ...);
         }(std::index_sequence_for<Components...>());
-        capacity_ = new_capacity;
+        guard.mark_complete();
+    }
+
+    template <component... Components>
+    auto _emplace(
+        entity_t entity, [[maybe_unused]] neutron::type_list<Components...>) {
+        const index_t index = size_;
+        if (size_ == capacity_) [[unlikely]] {
+            _relocate<Components...>(capacity_ << 1);
+        }
+        _emplace_normally<Components...>();
+        entity2index_.try_emplace(entity, index);
+        index2entity_.push_back(entity);
+        ++size_;
+    }
+
+    // emplace(...);
+
+    template <
+        size_t Index, typename TypeList, typename Tup,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    requires std::is_nothrow_constructible_v<
+        Ty, neutron::type_list_element_t<neutron::_rmcvref_first<Ty, Tup>, Tup>>
+    constexpr void _emplace_one_val_normally_noexcept(Tup&& tup) noexcept {
+        if constexpr (std::is_empty_v<Ty>) {
+            return;
+        }
+
+        _buffer_ptr& data = storage_[Index];
+        auto* const ptr   = data.get() + (sizeof(Ty) * size_);
+        ::new (ptr) Ty(neutron::rmcvref_first<Ty>(std::forward<Tup>(tup)));
+    }
+
+    template <component... SortedComponents, typename Tup>
+    requires(
+        std::is_nothrow_constructible_v<
+            SortedComponents,
+            neutron::type_list_element_t<
+                neutron::_rmcvref_first<SortedComponents, Tup>, Tup>> &&
+        ...)
+    constexpr void _emplace_vals_normally(
+        [[maybe_unused]] neutron::type_list<SortedComponents...>,
+        Tup&& tup) noexcept {
+        using tlist = neutron::type_list<SortedComponents...>;
+        [this, &tup]<size_t... Is>(std::index_sequence<Is...>) {
+            (_emplace_one_val_normally_noexcept<Is, tlist>(
+                 std::forward<Tup>(tup)),
+             ...);
+        }(std::index_sequence_for<SortedComponents...>());
+    }
+
+    template <
+        size_t Index, typename TypeList, typename Tup,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    requires std::is_nothrow_constructible_v<
+        Ty, neutron::type_list_element_t<neutron::_rmcvref_first<Ty, Tup>, Tup>>
+    constexpr void
+        _emplace_one_val_normally(Tup&& tup, size_type& succ) noexcept {
+        if constexpr (std::is_empty_v<Ty>) {
+            return;
+        }
+
+        _buffer_ptr& data = storage_[Index];
+        auto* const ptr   = data.get() + (sizeof(Ty) * size_);
+        ::new (ptr) Ty(neutron::rmcvref_first<Ty>(std::forward<Tup>(tup)));
+        ++succ;
+    }
+
+    template <
+        size_t Index, typename TypeList, typename Tup,
+        typename Ty = neutron::type_list_element_t<Index, TypeList>>
+    requires(!std::is_nothrow_constructible_v<
+             Ty, neutron::type_list_element_t<
+                     neutron::_rmcvref_first<Ty, Tup>, Tup>>)
+    constexpr void _emplace_one_val_normally(Tup&& tup, size_type& succ) {
+        if constexpr (std::is_empty_v<Ty>) {
+            return;
+        }
+
+        _buffer_ptr& data = storage_[Index];
+        auto* const ptr   = data.get() + (sizeof(Ty) * size_);
+        ::new (ptr) Ty(neutron::rmcvref_first<Ty>(std::forward<Tup>(tup)));
+        ++succ;
+    }
+
+    template <component... SortedComponents, typename Tup>
+    constexpr void _emplace_vals_normally(
+        [[maybe_unused]] neutron::type_list<SortedComponents...>, Tup&& tup)
+    requires(
+        !(std::is_nothrow_constructible_v<
+              SortedComponents,
+              neutron::type_list_element_t<
+                  neutron::_rmcvref_first<SortedComponents, Tup>, Tup>> &&
+          ...))
+    {
+        using tlist = neutron::type_list<SortedComponents...>;
+
+        [this, &tup]<size_t... Is>(std::index_sequence<Is...>) {
+            size_type succ = 0;
+            auto guard     = neutron::make_exception_guard([this, &succ] {
+                if (succ != sizeof...(SortedComponents)) {
+                    (_clean_for_emplace_one<Is, tlist>(), ...);
+                }
+            });
+            (_emplace_one_val_normally<Is, tlist>(std::forward<Tup>(tup)), ...);
+        }(std::index_sequence_for<SortedComponents...>());
+    }
+
+    template <component... SortedComponents, typename Tup>
+    constexpr void _emplace(
+        entity_t entity,
+        [[maybe_unused]] neutron::type_list<SortedComponents...> sorted,
+        Tup&& components) {
+        const auto index = size_;
+        if (size_ == capacity_) [[unlikely]] {
+            _relocate<SortedComponents...>(capacity_ << 1);
+        }
+        _emplace_vals_normally(sorted, std::forward<Tup>(components));
+        entity2index_.try_emplace(entity, index);
+        index2entity_.push_back(entity);
+        ++size_;
     }
 
     template <component... Components>
@@ -1172,97 +1453,7 @@ private:
             std::forward_as_tuple(std::forward<Components>(components)...));
     }
 
-    template <component... SortedComponents, typename Tup>
-    constexpr void _emplace(
-        entity_t entity,
-        [[maybe_unused]] neutron::type_list<SortedComponents...> sorted,
-        Tup&& components) {
-        const auto index = size_;
-        if (size_ != capacity_) [[likely]] {
-            _emplace_normally(sorted, std::forward<Tup>(components));
-        } else [[unlikely]] {
-            _emplace_with_relocate(sorted, std::forward<Tup>(components));
-        }
-        entity2index_.try_emplace(entity, index);
-        index2entity_.push_back(entity);
-        ++size_;
-    }
-
-    template <
-        size_t Index, typename SortedList, typename Tup,
-        typename Ty = neutron::type_list_element_t<Index, SortedList>>
-    constexpr void _emplace_normally(Tup&& tup) noexcept(
-        std::is_nothrow_constructible_v<
-            Ty, decltype(neutron::rmcvref_first<Ty>(std::forward<Tup>(tup)))>) {
-        using namespace neutron;
-        if constexpr (std::is_empty_v<Ty>) {
-            return;
-        }
-
-        _buffer_ptr& data = storage_[Index];
-        auto* const ptr   = data.get() + (sizeof(Ty) * size_);
-        ::new (ptr) Ty(rmcvref_first<Ty>(std::forward<Tup>(tup)));
-    }
-
-    template <component... SortedComponents, typename Tup>
-    constexpr void _emplace_normally(
-        [[maybe_unused]] neutron::type_list<SortedComponents...>, Tup&& tup) {
-        using sorted_list = neutron::type_list<SortedComponents...>;
-
-        [this, &tup]<size_t... Is>(std::index_sequence<Is...>) {
-            (_emplace_normally<Is, sorted_list>(std::forward<Tup>(tup)), ...);
-        }(std::index_sequence_for<SortedComponents...>());
-    }
-
-    template <
-        size_t Index, typename SortedList, typename FwdTup,
-        typename Ty = neutron::type_list_element_t<Index, SortedList>>
-    void _emplace_with_relocate(size_type new_capacity, FwdTup&& tup) {
-        if constexpr (std::is_empty_v<Ty>) {
-            return;
-        }
-
-        constexpr auto align     = _get_align(alignof(Ty));
-        constexpr auto alignment = static_cast<size_t>(align);
-
-        _buffer_ptr& data = storage_[Index];
-        auto* ptr         = static_cast<std::byte*>(
-            ::operator new(sizeof(Ty) * new_capacity, align));
-        auto guard = neutron::make_exception_guard(
-            [this, ptr] { ::operator delete(ptr, align); });
-        ::new (ptr + (sizeof(Ty) * size_))
-            Ty(neutron::rmcvref_first<Ty>(std::forward<FwdTup>(tup)));
-        if constexpr (neutron::trivially_relocatable<Ty>) {
-            std::memcpy(
-                std::assume_aligned<static_cast<size_t>(align)>(ptr),
-                std::assume_aligned<static_cast<size_t>(align)>(data.get()),
-                sizeof(Ty) * size_);
-        } else {
-            auto* const src = std::assume_aligned<alignment>(
-                reinterpret_cast<Ty*>(data.get()));
-            auto* const dst =
-                std::assume_aligned<alignment>(reinterpret_cast<Ty*>(ptr));
-            neutron::uninitialized_move_if_noexcept_n(src, size_, dst);
-            std::destroy_n(src, size_);
-        }
-        guard.mark_complete();
-        data = _buffer_ptr{ ptr, _buffer_deletor{ align } };
-    }
-
-    template <component... SortedComponents, typename Tup>
-    constexpr void _emplace_with_relocate(
-        [[maybe_unused]] neutron::type_list<SortedComponents...>,
-        Tup&& components) {
-        using sorted_list       = neutron::type_list<SortedComponents...>;
-        const auto new_capacity = capacity_ << 1;
-        [this, new_capacity,
-         &components]<size_t... Is>(std::index_sequence<Is...>) {
-            (_emplace_with_relocate<Is, sorted_list>(
-                 new_capacity, std::forward<Tup>(components)),
-             ...);
-        }(std::index_sequence_for<SortedComponents...>());
-        capacity_ = new_capacity;
-    }
+    // vw
 
     template <component... Components>
     constexpr auto _get_sorted(neutron::type_list<Components...>) const noexcept
