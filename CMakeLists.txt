@@ -3,9 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-if (NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 20)
-endif()
+set(CMAKE_CXX_STANDARD 20 CACHE STRING "The C++ standard to use")
 
 project(
   atom
@@ -78,6 +76,7 @@ endif()
 
 if(ATOM_ENABLE_BENCHMARK)
   include(FetchContent)
+  # set(FETCHCONTENT_FULLY_DISCONNECTED ON)
   FetchContent_Declare(
     googlebenchmark
     GIT_REPOSITORY https://github.com/google/benchmark.git
