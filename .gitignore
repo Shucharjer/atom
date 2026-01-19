@@ -10,3 +10,4 @@ src/type_hash.cpp
 CMakeUserPresets.json
 .clangd
 imgui.ini
+AGENTS.md
